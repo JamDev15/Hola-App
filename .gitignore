@@ -1,0 +1,21 @@
+# Environment variables — never commit secrets
+.env
+
+# Python
+venv/
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+
+# Node / frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+
+# macOS
+.DS_Store
+._*
+
+# Claude
+.claude/
