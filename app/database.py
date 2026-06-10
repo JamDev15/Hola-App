@@ -17,6 +17,7 @@ async def close_db():
 
 
 def get_db() -> AsyncIOMotorDatabase:
+    global _client
     if _client is None:
-        raise RuntimeError("Database not connected. Call connect_db() first.")
+        _client = AsyncIOMotorClient(settings.mongodb_uri)
     return _client[settings.db_name]
