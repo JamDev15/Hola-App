@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { Link } from 'react-router-dom'
-import ReactMarkdown from 'react-markdown'
 import { api } from '../api'
 import StatusBadge from '../components/StatusBadge'
+import AIRecommendation from '../components/AIRecommendation'
 
 function SummaryCard({ label, value, sub, color }) {
   return (
@@ -154,7 +154,7 @@ export default function Dashboard() {
               </thead>
               <tbody>
                 {filtered.map(order => (
-                  <React.Fragment key={order._id}>
+                  <React.Fragment key={order.id}>
                     <tr className="border-b border-slate-800/50 hover:bg-slate-800/20 transition-colors">
                       <td className="px-4 py-3 text-white font-medium">{order.clientName}</td>
                       <td className="px-4 py-3">
@@ -170,16 +170,16 @@ export default function Dashboard() {
                       <td className="px-4 py-3">
                         <select
                           value={order.status}
-                          onChange={e => handleStatusChange(order._id, e.target.value)}
+                          onChange={e => handleStatusChange(order.id, e.target.value)}
                           className="bg-transparent border-0 p-0 text-xs w-0 h-0 absolute opacity-0"
-                          id={`status-select-${order._id}`}
+                          id={`status-select-${order.id}`}
                         />
-                        <label htmlFor={`status-select-${order._id}`} className="cursor-pointer">
+                        <label htmlFor={`status-select-${order.id}`} className="cursor-pointer">
                           <StatusBadge status={order.status} />
                         </label>
                         <select
                           value={order.status}
-                          onChange={e => handleStatusChange(order._id, e.target.value)}
+                          onChange={e => handleStatusChange(order.id, e.target.value)}
                           className="input text-xs py-1 w-32 mt-1"
                         >
                           <option value="pending">Pending</option>
@@ -194,7 +194,7 @@ export default function Dashboard() {
                         <div className="flex items-center justify-end gap-1">
                           {order.aiRecommendation && (
                             <button
-                              onClick={() => setExpandedAI(expandedAI === order._id ? null : order._id)}
+                              onClick={() => setExpandedAI(expandedAI === order.id ? null : order.id)}
                               className="btn-ghost text-indigo-400 hover:text-indigo-300"
                               title="View AI Recommendation"
                             >
@@ -204,7 +204,7 @@ export default function Dashboard() {
                             </button>
                           )}
                           <button
-                            onClick={() => handleDelete(order._id)}
+                            onClick={() => handleDelete(order.id)}
                             className="btn-ghost text-red-400 hover:text-red-300"
                             title="Delete order"
                           >
@@ -215,8 +215,8 @@ export default function Dashboard() {
                         </div>
                       </td>
                     </tr>
-                    {expandedAI === order._id && order.aiRecommendation && (
-                      <tr key={`${order._id}-ai`} className="bg-indigo-950/20">
+                    {expandedAI === order.id && order.aiRecommendation && (
+                      <tr key={`${order.id}-ai`} className="bg-indigo-950/20">
                         <td colSpan={8} className="px-4 py-4">
                           <div className="bg-indigo-950/40 border border-indigo-500/20 rounded-lg p-4">
                             <div className="flex items-center gap-2 mb-3">
@@ -225,13 +225,7 @@ export default function Dashboard() {
                               </svg>
                               <span className="text-indigo-400 text-xs font-semibold uppercase tracking-wide">AI Recommendation</span>
                             </div>
-                            <div className="text-slate-300 text-xs leading-relaxed prose prose-invert prose-xs max-w-none
-                              [&_strong]:text-white [&_strong]:font-semibold
-                              [&_hr]:border-slate-700 [&_hr]:my-2
-                              [&_ul]:mt-1 [&_ul]:space-y-1 [&_li]:text-slate-300
-                              [&_p]:mb-1.5 [&_p:last-child]:mb-0">
-                              <ReactMarkdown>{order.aiRecommendation}</ReactMarkdown>
-                            </div>
+                            <AIRecommendation text={order.aiRecommendation} />
                           </div>
                         </td>
                       </tr>
