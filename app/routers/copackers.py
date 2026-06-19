@@ -1,10 +1,9 @@
 from datetime import datetime, timezone
 from fastapi import APIRouter, HTTPException
-from bson import ObjectId
 
 from app.database import get_db
 from app.models.copacker import CoPackerCreate, CoPackerUpdate
-from app.utils import serialize, serialize_many
+from app.utils import to_camel, to_snake
 
 router = APIRouter()
 
@@ -12,51 +11,48 @@ router = APIRouter()
 @router.get("")
 async def list_copackers():
     db = get_db()
-    docs = await db.copackers.find().sort("name", 1).to_list(None)
-    return serialize_many(docs)
+    response = await db.table("copackers").select("*").order("name").execute()
+    return [to_camel(r) for r in response.data]
 
 
 @router.post("", status_code=201)
 async def create_copacker(body: CoPackerCreate):
     db = get_db()
+    now = datetime.now(timezone.utc).isoformat()
     doc = {
-        **body.model_dump(),
-        "createdAt": datetime.now(timezone.utc),
-        "updatedAt": datetime.now(timezone.utc),
+        **to_snake(body.model_dump()),
+        "created_at": now,
+        "updated_at": now,
     }
-    result = await db.copackers.insert_one(doc)
-    doc["_id"] = result.inserted_id
-    return serialize(doc)
+    response = await db.table("copackers").insert(doc).execute()
+    return to_camel(response.data[0])
 
 
 @router.get("/{cp_id}")
 async def get_copacker(cp_id: str):
     db = get_db()
-    doc = await db.copackers.find_one({"_id": ObjectId(cp_id)})
-    if not doc:
+    response = await db.table("copackers").select("*").eq("id", cp_id).execute()
+    if not response.data:
         raise HTTPException(404, "Co-packer not found")
-    return serialize(doc)
+    return to_camel(response.data[0])
 
 
 @router.put("/{cp_id}")
 async def update_copacker(cp_id: str, body: CoPackerUpdate):
     db = get_db()
-    update_data = {k: v for k, v in body.model_dump().items() if v is not None}
-    update_data["updatedAt"] = datetime.now(timezone.utc)
-    result = await db.copackers.find_one_and_update(
-        {"_id": ObjectId(cp_id)},
-        {"$set": update_data},
-        return_document=True,
-    )
-    if not result:
+    raw = {k: v for k, v in body.model_dump().items() if v is not None}
+    update_data = to_snake(raw)
+    update_data["updated_at"] = datetime.now(timezone.utc).isoformat()
+    response = await db.table("copackers").update(update_data).eq("id", cp_id).execute()
+    if not response.data:
         raise HTTPException(404, "Co-packer not found")
-    return serialize(result)
+    return to_camel(response.data[0])
 
 
 @router.delete("/{cp_id}")
 async def delete_copacker(cp_id: str):
     db = get_db()
-    result = await db.copackers.delete_one({"_id": ObjectId(cp_id)})
-    if result.deleted_count == 0:
+    response = await db.table("copackers").delete().eq("id", cp_id).execute()
+    if not response.data:
         raise HTTPException(404, "Co-packer not found")
     return {"success": True}

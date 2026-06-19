@@ -1,10 +1,9 @@
 from datetime import datetime, timezone
 from fastapi import APIRouter, HTTPException
-from bson import ObjectId
 
 from app.database import get_db
 from app.models.formula import FormulaCreate, FormulaUpdate
-from app.utils import serialize, serialize_many
+from app.utils import to_camel, to_snake
 
 router = APIRouter()
 
@@ -12,53 +11,51 @@ router = APIRouter()
 @router.get("")
 async def list_formulas():
     db = get_db()
-    docs = await db.formulas.find().sort("name", 1).to_list(None)
-    return serialize_many(docs)
+    response = await db.table("formulas").select("*").order("name").execute()
+    return [to_camel(r) for r in response.data]
 
 
 @router.post("", status_code=201)
 async def create_formula(body: FormulaCreate):
     db = get_db()
-    if await db.formulas.find_one({"name": body.name}):
+    existing = await db.table("formulas").select("id").eq("name", body.name).execute()
+    if existing.data:
         raise HTTPException(409, "Formula name already exists")
+    now = datetime.now(timezone.utc).isoformat()
     doc = {
-        **body.model_dump(),
-        "createdAt": datetime.now(timezone.utc),
-        "updatedAt": datetime.now(timezone.utc),
+        **to_snake(body.model_dump()),
+        "created_at": now,
+        "updated_at": now,
     }
-    result = await db.formulas.insert_one(doc)
-    doc["_id"] = result.inserted_id
-    return serialize(doc)
+    response = await db.table("formulas").insert(doc).execute()
+    return to_camel(response.data[0])
 
 
 @router.get("/{formula_id}")
 async def get_formula(formula_id: str):
     db = get_db()
-    doc = await db.formulas.find_one({"_id": ObjectId(formula_id)})
-    if not doc:
+    response = await db.table("formulas").select("*").eq("id", formula_id).execute()
+    if not response.data:
         raise HTTPException(404, "Formula not found")
-    return serialize(doc)
+    return to_camel(response.data[0])
 
 
 @router.put("/{formula_id}")
 async def update_formula(formula_id: str, body: FormulaUpdate):
     db = get_db()
-    update_data = {k: v for k, v in body.model_dump().items() if v is not None}
-    update_data["updatedAt"] = datetime.now(timezone.utc)
-    result = await db.formulas.find_one_and_update(
-        {"_id": ObjectId(formula_id)},
-        {"$set": update_data},
-        return_document=True,
-    )
-    if not result:
+    raw = {k: v for k, v in body.model_dump().items() if v is not None}
+    update_data = to_snake(raw)
+    update_data["updated_at"] = datetime.now(timezone.utc).isoformat()
+    response = await db.table("formulas").update(update_data).eq("id", formula_id).execute()
+    if not response.data:
         raise HTTPException(404, "Formula not found")
-    return serialize(result)
+    return to_camel(response.data[0])
 
 
 @router.delete("/{formula_id}")
 async def delete_formula(formula_id: str):
     db = get_db()
-    result = await db.formulas.delete_one({"_id": ObjectId(formula_id)})
-    if result.deleted_count == 0:
+    response = await db.table("formulas").delete().eq("id", formula_id).execute()
+    if not response.data:
         raise HTTPException(404, "Formula not found")
     return {"success": True}

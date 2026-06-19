@@ -1,26 +1,21 @@
-from bson import ObjectId
-from datetime import datetime
+import re
 
 
-def serialize(doc: dict) -> dict:
-    """Convert MongoDB document to JSON-serializable dict."""
-    if doc is None:
+def _snake_to_camel(name: str) -> str:
+    parts = name.split('_')
+    return parts[0] + ''.join(p.title() for p in parts[1:])
+
+
+def _camel_to_snake(name: str) -> str:
+    s1 = re.sub('(.)([A-Z][a-z]+)', r'\1_\2', name)
+    return re.sub('([a-z0-9])([A-Z])', r'\1_\2', s1).lower()
+
+
+def to_camel(d: dict) -> dict:
+    if d is None:
         return None
-    doc = dict(doc)
-    for key, val in doc.items():
-        if isinstance(val, ObjectId):
-            doc[key] = str(val)
-        elif isinstance(val, datetime):
-            doc[key] = val.isoformat()
-        elif isinstance(val, list):
-            doc[key] = [
-                serialize(i) if isinstance(i, dict) else
-                str(i) if isinstance(i, ObjectId) else
-                i.isoformat() if isinstance(i, datetime) else i
-                for i in val
-            ]
-    return doc
+    return {_snake_to_camel(k): v for k, v in d.items()}
 
 
-def serialize_many(docs) -> list:
-    return [serialize(d) for d in docs]
+def to_snake(d: dict) -> dict:
+    return {_camel_to_snake(k): v for k, v in d.items()}

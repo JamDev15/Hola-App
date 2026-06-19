@@ -2,29 +2,27 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.database import connect_db, close_db
+from app.config import settings
+from app.database import init_db
 from app.routers import orders, copackers, formulas, seed, proof
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    await connect_db()
+    await init_db()
     yield
-    await close_db()
 
 
 app = FastAPI(title="Halo Production Intelligence", lifespan=lifespan)
 
-# Allow React dev server (port 5173) to call the API
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://localhost:3000"],
+    allow_origins=[o.strip() for o in settings.allowed_origins.split(",")],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# API Routers only — React handles all page routing
 app.include_router(orders.router, prefix="/api/orders", tags=["orders"])
 app.include_router(copackers.router, prefix="/api/co-packers", tags=["co-packers"])
 app.include_router(formulas.router, prefix="/api/formulas", tags=["formulas"])

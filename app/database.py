@@ -1,23 +1,15 @@
-from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase
+from supabase import acreate_client, AsyncClient
 from app.config import settings
 
-_client: AsyncIOMotorClient | None = None
+_client: AsyncClient | None = None
 
 
-async def connect_db():
+async def init_db():
     global _client
-    _client = AsyncIOMotorClient(settings.mongodb_uri)
+    _client = await acreate_client(settings.supabase_url, settings.supabase_key)
 
 
-async def close_db():
-    global _client
-    if _client:
-        _client.close()
-        _client = None
-
-
-def get_db() -> AsyncIOMotorDatabase:
-    global _client
+def get_db() -> AsyncClient:
     if _client is None:
-        _client = AsyncIOMotorClient(settings.mongodb_uri)
-    return _client[settings.db_name]
+        raise RuntimeError("Database not initialized")
+    return _client
