@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Test Artwork — Halo Private Label</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #1a1a2e; font-family: Arial, sans-serif; display: flex; flex-direction: column; align-items: center; padding: 40px 20px; gap: 60px; }
+  h1 { color: #888; font-size: 14px; letter-spacing: 2px; text-transform: uppercase; margin-bottom: -40px; }
+  .label { color: #666; font-size: 12px; text-align: center; margin-top: -50px; }
+
+  /* ── FRONT PANEL ─────────────────────── */
+  .front {
+    width: 340px; height: 500px;
+    background: linear-gradient(160deg, #0f0c29, #302b63, #24243e);
+    border-radius: 18px;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: space-between;
+    padding: 28px 24px 24px;
+    position: relative;
+    overflow: hidden;
+    box-shadow: 0 0 0 2px #7c3aed, 0 20px 60px rgba(124,58,237,0.4);
+  }
+  .front::before {
+    content: '';
+    position: absolute; top: -60px; left: -60px;
+    width: 240px; height: 240px;
+    background: radial-gradient(circle, rgba(124,58,237,0.3) 0%, transparent 70%);
+  }
+  .brand { color: #a78bfa; font-size: 11px; letter-spacing: 4px; text-transform: uppercase; z-index:1; }
+  .product-name { color: #fff; font-size: 36px; font-weight: 900; letter-spacing: -1px; text-align: center; z-index:1; line-height: 1; }
+  .product-type { color: #c4b5fd; font-size: 12px; letter-spacing: 2px; text-transform: uppercase; z-index:1; text-align: center; }
+  .orb {
+    width: 120px; height: 120px;
+    background: radial-gradient(circle at 35% 35%, #7c3aed, #1e1b4b);
+    border-radius: 50%;
+    box-shadow: 0 0 40px rgba(124,58,237,0.6);
+    z-index:1;
+  }
+  .flavor-block { text-align: center; z-index:1; }
+  .flavor-name { color: #fbbf24; font-size: 28px; font-weight: 800; text-transform: uppercase; letter-spacing: 1px; }
+  .flavor-stmt { color: #fde68a; font-size: 11px; margin-top: 4px; font-style: italic; }
+  .front-footer { width: 100%; display: flex; justify-content: space-between; align-items: flex-end; z-index:1; }
+  .identity { color: #e0e7ff; font-size: 10px; letter-spacing: 1px; text-transform: uppercase; }
+  .net-weight { color: #e0e7ff; font-size: 10px; text-align: right; }
+
+  /* ── BACK PANEL ──────────────────────── */
+  .back {
+    width: 380px;
+    background: #fff;
+    border-radius: 12px;
+    padding: 20px;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+    display: flex; flex-direction: column; gap: 10px;
+  }
+  .back-header { text-align: center; border-bottom: 2px solid #000; padding-bottom: 8px; }
+  .back-brand { font-size: 20px; font-weight: 900; letter-spacing: -0.5px; color: #1e1b4b; }
+  .back-flavor { font-size: 13px; color: #444; font-style: italic; }
+
+  /* SFP */
+  .sfp { border: 2px solid #000; padding: 8px; font-size: 10px; color: #000; }
+  .sfp-title { font-size: 22px; font-weight: 900; border-bottom: 8px solid #000; padding-bottom: 4px; margin-bottom: 4px; }
+  .sfp-serving { font-size: 10px; border-bottom: 1px solid #999; padding-bottom: 3px; margin-bottom: 3px; }
+  .sfp-cal-row { display: flex; justify-content: space-between; border-bottom: 4px solid #000; padding-bottom: 4px; margin-bottom: 4px; }
+  .sfp-cal { font-size: 28px; font-weight: 900; }
+  .sfp-row { display: flex; justify-content: space-between; border-bottom: 1px solid #ccc; padding: 2px 0; }
+  .sfp-row.bold-row { border-bottom: 2px solid #666; font-weight: 700; }
+  .sfp-dv { font-size: 9px; color: #333; margin-top: 4px; }
+
+  /* Text sections */
+  .section { font-size: 10px; color: #000; line-height: 1.5; }
+  .section strong { display: block; font-size: 11px; margin-bottom: 2px; text-transform: uppercase; letter-spacing: 0.5px; }
+
+  .back-footer { border-top: 1px solid #ccc; padding-top: 8px; font-size: 9px; color: #333; line-height: 1.6; }
+  .upc-block { display: flex; align-items: center; gap: 10px; }
+  .upc-bars {
+    display: flex; gap: 1.5px; height: 40px; align-items: flex-end;
+  }
+  .upc-bars span { display: block; width: 2px; background: #000; }
+  .upc-num { font-size: 9px; color: #000; letter-spacing: 1px; }
+</style>
+</head>
+<body>
+
+<h1>Test Artwork — Screenshot Each Panel</h1>
+
+<!-- ══ FRONT PANEL ══ -->
+<div class="front">
+  <div class="brand">Halo Private Label</div>
+  <div class="product-name">HALO<br>HYDRATE</div>
+  <div class="product-type">Electrolyte Powder Supplement</div>
+  <div class="orb"></div>
+  <div class="flavor-block">
+    <div class="flavor-name">Yuzu Lemon</div>
+    <div class="flavor-stmt">Flavored with other natural flavors</div>
+  </div>
+  <div class="front-footer">
+    <div class="identity">Dietary Supplement<br>15 Stick Packs</div>
+    <div class="net-weight">Net WT. 13G (0.45 OZ)<br>Per Stick</div>
+  </div>
+</div>
+<div class="label">↑ FRONT PANEL — Screenshot this and upload as Front Panel</div>
+
+<!-- ══ BACK PANEL ══ -->
+<div class="back">
+  <div class="back-header">
+    <div class="back-brand">HALO HYDRATE</div>
+    <div class="back-flavor">Yuzu Lemon — Electrolyte Powder Supplement</div>
+  </div>
+
+  <!-- Supplement Facts Panel -->
+  <div class="sfp">
+    <div class="sfp-title">Supplement Facts</div>
+    <div class="sfp-serving">Serving Size: 1 Stick Pack (13g) &nbsp;|&nbsp; Servings Per Container: 15</div>
+    <div class="sfp-cal-row">
+      <div>
+        <div style="font-size:11px;font-weight:700;">Amount Per Serving</div>
+        <div class="sfp-cal">Calories <span>5</span></div>
+      </div>
+      <div style="text-align:right;font-size:10px;">% Daily Value*</div>
+    </div>
+    <div class="sfp-row bold-row"><span>Total Carbohydrate 1g</span><span>0%</span></div>
+    <div class="sfp-row" style="padding-left:10px;"><span>Total Sugars 0g</span><span></span></div>
+    <div class="sfp-row" style="padding-left:10px;"><span>Includes 0g Added Sugars</span><span>0%</span></div>
+    <div class="sfp-row bold-row"><span>Sodium 250mg</span><span>11%</span></div>
+    <div class="sfp-row bold-row"><span>Potassium 200mg</span><span>4%</span></div>
+    <div class="sfp-row bold-row"><span>Magnesium 30mg</span><span>7%</span></div>
+    <div class="sfp-row bold-row"><span>Vitamin C (Ascorbic Acid) 60mg</span><span>67%</span></div>
+    <div class="sfp-row bold-row"><span>Vitamin B6 (Pyridoxine HCl) 0.5mg</span><span>29%</span></div>
+    <div class="sfp-row bold-row"><span>Vitamin B12 (Methylcobalamin) 3mcg</span><span>125%</span></div>
+    <div class="sfp-dv">* Percent Daily Values are based on a 2,000 calorie diet.<br>
+    <strong>Other Ingredients:</strong> Citric Acid, Natural Yuzu Lemon Flavor, Stevia Leaf Extract, Silicon Dioxide, Beet Root Powder (color).</div>
+  </div>
+
+  <!-- Suggested Use -->
+  <div class="section">
+    <strong>Suggested Use</strong>
+    Mix one stick with 8–16oz of cold water and shake well. Consume before, during, or after exercise. Do not exceed 2 servings per day.
+  </div>
+
+  <!-- Storage -->
+  <div class="section">
+    <strong>Storage</strong>
+    Store in a cool, dry place. Keep out of reach of children. Do not use if seal is broken.
+  </div>
+
+  <!-- UPC -->
+  <div class="section">
+    <strong>Barcode</strong>
+    <div class="upc-block">
+      <div class="upc-bars">
+        <!-- simplified barcode visual -->
+        <span style="height:100%"></span><span style="height:80%"></span><span style="height:100%;width:4px"></span>
+        <span style="height:60%"></span><span style="height:90%"></span><span style="height:100%"></span>
+        <span style="height:70%"></span><span style="height:100%;width:4px"></span><span style="height:80%"></span>
+        <span style="height:100%"></span><span style="height:60%"></span><span style="height:90%"></span>
+        <span style="height:100%;width:4px"></span><span style="height:80%"></span><span style="height:100%"></span>
+        <span style="height:70%"></span><span style="height:60%"></span><span style="height:100%;width:4px"></span>
+        <span style="height:90%"></span><span style="height:100%"></span><span style="height:80%"></span>
+        <span style="height:100%;width:4px"></span><span style="height:70%"></span><span style="height:100%"></span>
+      </div>
+      <div>
+        <div class="upc-num">0 12345 67890 5</div>
+        <div style="font-size:8px;color:#555;">UPC-A</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Footer: Made For / Manufactured By / Origin -->
+  <div class="back-footer">
+    <div><strong>Made For:</strong> Sunrise Wellness Co., 900 Brickell Ave, Suite 1200, Miami, FL 33131</div>
+    <div><strong>Manufactured By:</strong> HALO Lifestyle LLC, 64 Bleecker Street, Unit 184, New York, NY 10012</div>
+    <div style="margin-top:4px;"><strong>MADE IN USA – WORLDWIDE INGREDIENTS</strong></div>
+    <div style="margin-top:4px; font-size:8px; color:#555;">
+      These statements have not been evaluated by the Food and Drug Administration.
+      This product is not intended to diagnose, treat, cure, or prevent any disease.
+    </div>
+  </div>
+</div>
+<div class="label">↑ BACK PANEL — Screenshot this and upload as Back Panel</div>
+
+</body>
+</html>

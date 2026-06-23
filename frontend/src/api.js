@@ -32,9 +32,11 @@ export const api = {
     delete: (id) => req(`/formulas/${id}`, { method: 'DELETE' }),
   },
   seed: () => req('/seed', { method: 'POST' }),
-  proof: async (file) => {
+  proof: async ({ frontFile, backFile, combinedFile }) => {
     const form = new FormData()
-    form.append('file', file)
+    if (combinedFile) form.append('combined_file', combinedFile)
+    if (frontFile) form.append('front_file', frontFile)
+    if (backFile) form.append('back_file', backFile)
     const res = await fetch('/api/proof', { method: 'POST', body: form })
     const text = await res.text()
     let data
@@ -42,4 +44,13 @@ export const api = {
     if (!res.ok) throw new Error(data.detail || 'Proof request failed')
     return data
   },
+  proofFromSharePoint: ({ frontUrl, backUrl, combinedUrl }) =>
+    req('/proof/sharepoint', {
+      method: 'POST',
+      body: JSON.stringify({
+        front_url:    frontUrl    || '',
+        back_url:     backUrl     || '',
+        combined_url: combinedUrl || '',
+      }),
+    }),
 }

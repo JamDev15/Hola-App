@@ -1,25 +1,12 @@
 import json
-from google import genai
-from google.genai import types
+import base64
+import asyncio
+import anthropic
+from typing import Optional
+from pydantic import BaseModel
 from fastapi import APIRouter, UploadFile, File, HTTPException
 from app.config import settings
-
-# --- Anthropic (commented out — using Gemini instead) ---
-# import base64
-# from app.ai import get_client
-#
-# async def _proof_with_anthropic(content: bytes, media_type: str) -> str:
-#     b64 = base64.standard_b64encode(content).decode("utf-8")
-#     client = get_client()
-#     response = await client.messages.create(
-#         model=settings.anthropic_model,
-#         max_tokens=2048,
-#         messages=[{"role": "user", "content": [
-#             {"type": "image", "source": {"type": "base64", "media_type": media_type, "data": b64}},
-#             {"type": "text", "text": PROOF_PROMPT},
-#         ]}],
-#     )
-#     return response.content[0].text if response.content else ""
+from app import dropbox as dropbox_util
 
 router = APIRouter()
 
@@ -32,7 +19,7 @@ Return ONLY a JSON object with this exact structure (no other text):
   "overall_pass": true | false,
   "summary": "One sentence overall assessment",
   "checks": [
-    {`
+    {
       "id": "check_id",
       "label": "Check Label",
       "group": "front" | "back" | "claims",
@@ -99,37 +86,22 @@ Evaluate every check below. If a panel is not visible in the image, mark its che
 Be precise. Use "warning" when text is partially visible or ambiguous."""
 
 
-def _get_gemini():
-    return genai.Client(api_key=settings.gemini_api_key)
-
-
-@router.post("")
-async def proof_artwork(file: UploadFile = File(...)):
-    if not file.content_type or not file.content_type.startswith("image/"):
-        raise HTTPException(400, "File must be an image (JPEG, PNG, WEBP, or GIF)")
-
-    content = await file.read()
-    if len(content) > 20 * 1024 * 1024:
-        raise HTTPException(400, "Image must be under 20MB")
-
+async def _analyze(content: list) -> dict:
+    """Send content blocks to Claude and return parsed compliance JSON."""
     try:
-        import asyncio
-        client = _get_gemini()
-        response = await asyncio.to_thread(
-            client.models.generate_content,
-            model=settings.gemini_model,
-            contents=[
-                types.Part.from_bytes(data=content, mime_type=file.content_type),
-                PROOF_PROMPT,
-            ],
+        client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
+        response = await client.messages.create(
+            model=settings.anthropic_model,
+            max_tokens=2048,
+            messages=[{"role": "user", "content": content}],
         )
-        text = response.text
+        text = response.content[0].text if response.content else ""
     except Exception as e:
         raise HTTPException(500, f"AI analysis failed: {str(e)}")
 
     try:
-        start = text.find('{')
-        end = text.rfind('}') + 1
+        start = text.find("{")
+        end = text.rfind("}") + 1
         result = json.loads(text[start:end]) if start >= 0 and end > start else {}
     except Exception:
         result = {}
@@ -142,4 +114,110 @@ async def proof_artwork(file: UploadFile = File(...)):
             "checks": [],
         }
 
+    return result
+
+
+ALLOWED_TYPES = {"image/jpeg", "image/png", "image/webp", "image/gif", "application/pdf"}
+
+
+def _content_block(data: bytes, mime_type: str) -> dict:
+    b64 = base64.standard_b64encode(data).decode()
+    if mime_type == "application/pdf":
+        return {"type": "document", "source": {"type": "base64", "media_type": "application/pdf", "data": b64}}
+    return {"type": "image", "source": {"type": "base64", "media_type": mime_type, "data": b64}}
+
+
+async def _read_panel(upload: UploadFile, label: str) -> tuple[bytes, str]:
+    if not upload.content_type or upload.content_type not in ALLOWED_TYPES:
+        raise HTTPException(400, f"{label} must be an image (JPEG, PNG, WEBP) or a PDF")
+    data = await upload.read()
+    if len(data) > 20 * 1024 * 1024:
+        raise HTTPException(400, f"{label} file must be under 20MB")
+    return data, upload.content_type
+
+
+# ── File upload endpoint ─────────────────────────────────────────────────────
+
+@router.post("")
+async def proof_artwork(
+    front_file: Optional[UploadFile] = File(None),
+    back_file: Optional[UploadFile] = File(None),
+    combined_file: Optional[UploadFile] = File(None),
+):
+    if not front_file and not back_file and not combined_file:
+        raise HTTPException(400, "Upload at least one panel image/PDF (front, back, or combined)")
+
+    content = []
+    db_tasks = []
+
+    if combined_file:
+        data, mime = await _read_panel(combined_file, "Combined")
+        content += [{"type": "text", "text": "[COMBINED FRONT + BACK PANELS]"}, _content_block(data, mime)]
+        db_tasks.append(dropbox_util.upload_file(data, combined_file.filename or "combined", mime, "combined"))
+    if front_file:
+        data, mime = await _read_panel(front_file, "Front")
+        content += [{"type": "text", "text": "[FRONT PANEL]"}, _content_block(data, mime)]
+        db_tasks.append(dropbox_util.upload_file(data, front_file.filename or "front", mime, "front"))
+    if back_file:
+        data, mime = await _read_panel(back_file, "Back")
+        content += [{"type": "text", "text": "[BACK PANEL]"}, _content_block(data, mime)]
+        db_tasks.append(dropbox_util.upload_file(data, back_file.filename or "back", mime, "back"))
+
+    content.append({"type": "text", "text": PROOF_PROMPT})
+
+    # Run Claude analysis + Dropbox uploads concurrently
+    analysis_task = _analyze(content)
+    results = await asyncio.gather(analysis_task, *db_tasks, return_exceptions=True)
+
+    result = results[0] if not isinstance(results[0], Exception) else {
+        "panel_detected": "unclear", "overall_pass": False,
+        "summary": "Analysis failed.", "checks": [],
+    }
+    uploads = [r for r in results[1:] if isinstance(r, dict)]
+    if uploads:
+        result["dropbox_uploads"] = uploads
+    return result
+
+
+# ── SharePoint endpoint ──────────────────────────────────────────────────────
+
+class SharePointProofRequest(BaseModel):
+    front_url:    str = ""
+    back_url:     str = ""
+    combined_url: str = ""
+
+
+@router.post("/sharepoint")
+async def proof_from_sharepoint(req: SharePointProofRequest):
+    if not req.front_url and not req.back_url and not req.combined_url:
+        raise HTTPException(400, "Provide at least one SharePoint URL (front, back, or combined)")
+
+    from app.routers.sharepoint import fetch_file
+
+    content = []
+    db_tasks = []
+
+    if req.combined_url:
+        data, mime, name = await fetch_file(req.combined_url)
+        content += [{"type": "text", "text": "[COMBINED FRONT + BACK PANELS]"}, _content_block(data, mime)]
+        db_tasks.append(dropbox_util.upload_file(data, name, mime, "combined"))
+    if req.front_url:
+        data, mime, name = await fetch_file(req.front_url)
+        content += [{"type": "text", "text": "[FRONT PANEL]"}, _content_block(data, mime)]
+        db_tasks.append(dropbox_util.upload_file(data, name, mime, "front"))
+    if req.back_url:
+        data, mime, name = await fetch_file(req.back_url)
+        content += [{"type": "text", "text": "[BACK PANEL]"}, _content_block(data, mime)]
+        db_tasks.append(dropbox_util.upload_file(data, name, mime, "back"))
+
+    content.append({"type": "text", "text": PROOF_PROMPT})
+
+    results = await asyncio.gather(_analyze(content), *db_tasks, return_exceptions=True)
+    result = results[0] if not isinstance(results[0], Exception) else {
+        "panel_detected": "unclear", "overall_pass": False,
+        "summary": "Analysis failed.", "checks": [],
+    }
+    uploads = [r for r in results[1:] if isinstance(r, dict)]
+    if uploads:
+        result["dropbox_uploads"] = uploads
     return result
