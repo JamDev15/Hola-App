@@ -1,4 +1,6 @@
 const BASE = '/api'
+// File uploads bypass Vercel's 4.5 MB proxy limit by going directly to the backend
+const DIRECT_BASE = 'https://hola-app-k5ov.onrender.com/api'
 
 async function req(url, options = {}) {
   const res = await fetch(BASE + url, {
@@ -37,7 +39,7 @@ export const api = {
     if (combinedFile) form.append('combined_file', combinedFile)
     if (frontFile) form.append('front_file', frontFile)
     if (backFile) form.append('back_file', backFile)
-    const res = await fetch('/api/proof', { method: 'POST', body: form })
+    const res = await fetch(`${DIRECT_BASE}/proof`, { method: 'POST', body: form })
     const text = await res.text()
     let data
     try { data = JSON.parse(text) } catch { throw new Error(text || 'Proof request failed') }
