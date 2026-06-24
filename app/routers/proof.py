@@ -92,7 +92,7 @@ async def _analyze(content: list) -> dict:
         client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
         response = await client.messages.create(
             model=settings.anthropic_model,
-            max_tokens=2048,
+            max_tokens=4096,
             messages=[{"role": "user", "content": content}],
         )
         text = response.content[0].text if response.content else ""
@@ -169,10 +169,12 @@ async def proof_artwork(
     analysis_task = _analyze(content)
     results = await asyncio.gather(analysis_task, *db_tasks, return_exceptions=True)
 
-    result = results[0] if not isinstance(results[0], Exception) else {
-        "panel_detected": "unclear", "overall_pass": False,
-        "summary": "Analysis failed.", "checks": [],
-    }
+    if isinstance(results[0], Exception):
+        err = results[0]
+        detail = err.detail if hasattr(err, "detail") else str(err)
+        result = {"panel_detected": "unclear", "overall_pass": False, "summary": detail, "checks": []}
+    else:
+        result = results[0]
     uploads = [r for r in results[1:] if isinstance(r, dict)]
     if uploads:
         result["dropbox_uploads"] = uploads
@@ -213,10 +215,12 @@ async def proof_from_sharepoint(req: SharePointProofRequest):
     content.append({"type": "text", "text": PROOF_PROMPT})
 
     results = await asyncio.gather(_analyze(content), *db_tasks, return_exceptions=True)
-    result = results[0] if not isinstance(results[0], Exception) else {
-        "panel_detected": "unclear", "overall_pass": False,
-        "summary": "Analysis failed.", "checks": [],
-    }
+    if isinstance(results[0], Exception):
+        err = results[0]
+        detail = err.detail if hasattr(err, "detail") else str(err)
+        result = {"panel_detected": "unclear", "overall_pass": False, "summary": detail, "checks": []}
+    else:
+        result = results[0]
     uploads = [r for r in results[1:] if isinstance(r, dict)]
     if uploads:
         result["dropbox_uploads"] = uploads
