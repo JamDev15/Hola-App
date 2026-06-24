@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from 'react'
+import { useState, useRef, useCallback, useEffect } from 'react'
 import { api } from '../api'
 import { generateCompliancePDF } from '../utils/generatePDF'
 
@@ -16,6 +16,15 @@ const STATUS_META = {
   warning:        { label: 'Warning', icon: '!', cls: 'bg-amber-500/10 text-amber-400 border-amber-500/20'      },
   not_applicable: { label: 'N/A',     icon: '—', cls: 'bg-slate-800 text-slate-500 border-slate-700'            },
 }
+
+const LOADING_STEPS = [
+  'Uploading file to Claude AI…',
+  'Detecting panel layout…',
+  'Checking front label elements…',
+  'Reviewing back panel…',
+  'Validating claims compliance…',
+  'Generating compliance report…',
+]
 
 // ── Small reusable components ─────────────────────────────────────────────────
 
@@ -77,7 +86,7 @@ function CheckGroup({ group, checks }) {
   )
 }
 
-// ── Upload zone (file drag-drop, images + PDF) ────────────────────────────────
+// ── Upload zone ───────────────────────────────────────────────────────────────
 
 const ACCEPT = 'image/jpeg,image/png,image/webp,image/gif,application/pdf,.pdf'
 
@@ -195,68 +204,159 @@ function SharePointInput({ label, dotColor, value, onChange }) {
   )
 }
 
+// ── Loading card ──────────────────────────────────────────────────────────────
+
+function LoadingCard({ step }) {
+  return (
+    <div className="card p-6 sm:p-10 flex flex-col items-center gap-4 text-center">
+      <div className="w-14 h-14 rounded-2xl bg-indigo-600/20 flex items-center justify-center">
+        <svg className="animate-spin w-7 h-7 text-indigo-400" fill="none" viewBox="0 0 24 24">
+          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+        </svg>
+      </div>
+      <div>
+        <p className="text-white font-medium">Analyzing artwork…</p>
+        <p className="text-slate-500 text-xs mt-1">Large files may take 20–30 seconds</p>
+      </div>
+      <div className="w-full space-y-2 text-left">
+        {LOADING_STEPS.map((s, i) => (
+          <div key={i} className={`flex items-center gap-2 text-xs transition-colors ${i === step ? 'text-indigo-300' : i < step ? 'text-slate-600' : 'text-slate-700'}`}>
+            {i < step ? (
+              <svg className="w-3 h-3 text-emerald-500 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+              </svg>
+            ) : i === step ? (
+              <svg className="animate-spin w-3 h-3 text-indigo-400 flex-shrink-0" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+              </svg>
+            ) : (
+              <span className="w-3 h-3 flex-shrink-0" />
+            )}
+            {s}
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+// ── Results card ──────────────────────────────────────────────────────────────
+
+function ResultsCard({ result, grouped, passCount, failCount, warnCount }) {
+  return (
+    <>
+      <div className={`card p-4 sm:p-5 flex items-start gap-4 border ${result.overall_pass ? 'border-emerald-500/30' : 'border-red-500/30'}`}>
+        <div className={`w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 ${result.overall_pass ? 'bg-emerald-500/10' : 'bg-red-500/10'}`}>
+          {result.overall_pass ? (
+            <svg className="w-5 h-5 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+          ) : (
+            <svg className="w-5 h-5 text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" />
+            </svg>
+          )}
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <p className={`font-semibold ${result.overall_pass ? 'text-emerald-400' : 'text-red-400'}`}>
+              {result.overall_pass ? 'Artwork Approved' : 'Revisions Required'}
+            </p>
+            <span className="text-slate-600 text-xs border border-slate-700 px-1.5 py-0.5 rounded capitalize">
+              {result.panel_detected} panel
+            </span>
+          </div>
+          <p className="text-slate-400 text-sm mt-1">{result.summary}</p>
+          <div className="flex items-center gap-3 mt-2 text-xs">
+            <span className="text-emerald-400">{passCount} passed</span>
+            {failCount > 0 && <span className="text-red-400">{failCount} failed</span>}
+            {warnCount > 0 && <span className="text-amber-400">{warnCount} warnings</span>}
+          </div>
+        </div>
+      </div>
+
+      {result.dropbox_uploads?.length > 0 && (
+        <div className="card px-4 py-3 flex items-start gap-3 border border-blue-500/20 bg-blue-500/5">
+          <svg className="w-4 h-4 text-blue-400 flex-shrink-0 mt-0.5" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M12 2L6 6.5l6 4.5 6-4.5L12 2zm-6 9.5L0 16l6 4.5 6-4.5-6-4.5zm12 0l-6 4.5 6 4.5 6-4.5-6-4.5zM6 21.5L12 26l6-4.5-6-4.5-6 4.5z"/>
+          </svg>
+          <div className="flex-1 min-w-0">
+            <p className="text-blue-300 text-xs font-semibold mb-1">Saved to Dropbox</p>
+            <div className="space-y-0.5">
+              {result.dropbox_uploads.map((u, i) => (
+                <div key={i} className="flex items-center gap-2 text-xs">
+                  <span className="text-slate-500 capitalize">{u.panel}:</span>
+                  {u.url ? (
+                    <a href={u.url} target="_blank" rel="noopener noreferrer"
+                       className="text-blue-400 hover:text-blue-300 truncate underline underline-offset-2">
+                      {u.name}
+                    </a>
+                  ) : (
+                    <span className="text-slate-400 truncate">{u.name}</span>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className="space-y-3">
+        {Object.entries(grouped).map(([g, checks]) => (
+          <CheckGroup key={g} group={g} checks={checks} />
+        ))}
+      </div>
+    </>
+  )
+}
+
 // ── Main page ─────────────────────────────────────────────────────────────────
 
 export default function Proofing() {
-  const [sourceMode, setSourceMode] = useState('upload') // 'upload' | 'sharepoint'
-  const [panelMode,  setPanelMode]  = useState('separate') // 'separate' | 'combined'
+  const [sourceMode, setSourceMode] = useState('upload')
+  const [panelMode,  setPanelMode]  = useState('separate')
 
-  // Separate panel upload
   const [frontFile,    setFrontFile]    = useState(null)
   const [frontPreview, setFrontPreview] = useState(null)
   const [backFile,     setBackFile]     = useState(null)
   const [backPreview,  setBackPreview]  = useState(null)
-
-  // Combined upload
   const [combinedFile,    setCombinedFile]    = useState(null)
   const [combinedPreview, setCombinedPreview] = useState(null)
 
-  // SharePoint mode
   const [frontUrl,    setFrontUrl]    = useState('')
   const [backUrl,     setBackUrl]     = useState('')
   const [combinedUrl, setCombinedUrl] = useState('')
 
-  const [loading, setLoading] = useState(false)
-  const [result,  setResult]  = useState(null)
-  const [error,   setError]   = useState('')
+  const [loading,     setLoading]     = useState(false)
+  const [loadingStep, setLoadingStep] = useState(0)
+  const [result,      setResult]      = useState(null)
+  const [error,       setError]       = useState('')
 
-  // File handlers
+  // Cycle through loading steps while analyzing
+  useEffect(() => {
+    if (!loading) { setLoadingStep(0); return }
+    const id = setInterval(() => setLoadingStep(s => Math.min(s + 1, LOADING_STEPS.length - 1)), 4000)
+    return () => clearInterval(id)
+  }, [loading])
+
   const readPreview = (f, setPreview) => {
     if (f.type.startsWith('image/')) {
       const reader = new FileReader()
       reader.onload = e => setPreview(e.target.result)
       reader.readAsDataURL(f)
     } else {
-      setPreview(null) // PDFs have no image preview
+      setPreview(null)
     }
   }
 
-  const handleFrontFile = useCallback((f) => {
-    setFrontFile(f); setResult(null); setError('')
-    readPreview(f, setFrontPreview)
-  }, [])
+  const handleFrontFile    = useCallback((f) => { setFrontFile(f);    setResult(null); setError(''); readPreview(f, setFrontPreview)    }, [])
+  const handleBackFile     = useCallback((f) => { setBackFile(f);     setResult(null); setError(''); readPreview(f, setBackPreview)     }, [])
+  const handleCombinedFile = useCallback((f) => { setCombinedFile(f); setResult(null); setError(''); readPreview(f, setCombinedPreview) }, [])
 
-  const handleBackFile = useCallback((f) => {
-    setBackFile(f); setResult(null); setError('')
-    readPreview(f, setBackPreview)
-  }, [])
-
-  const handleCombinedFile = useCallback((f) => {
-    setCombinedFile(f); setResult(null); setError('')
-    readPreview(f, setCombinedPreview)
-  }, [])
-
-  const switchMode = (mode) => {
-    setSourceMode(mode)
-    setResult(null)
-    setError('')
-  }
-
-  const switchPanelMode = (mode) => {
-    setPanelMode(mode)
-    setResult(null)
-    setError('')
-  }
+  const switchMode      = (m) => { setSourceMode(m); setResult(null); setError('') }
+  const switchPanelMode = (m) => { setPanelMode(m);  setResult(null); setError('') }
 
   const hasInput = sourceMode === 'upload'
     ? (panelMode === 'separate' ? (frontFile || backFile) : combinedFile)
@@ -320,16 +420,13 @@ export default function Proofing() {
   const failCount = result?.checks?.filter(c => c.status === 'fail').length    || 0
   const warnCount = result?.checks?.filter(c => c.status === 'warning').length || 0
 
-  // Label for analyze button
   const panelLabel = panelMode === 'combined' ? '(Combined)'
     : sourceMode === 'sharepoint'
     ? (frontUrl && backUrl ? '(Both Panels)' : frontUrl ? '(Front Panel)' : backUrl ? '(Back Panel)' : '')
-    : panelMode === 'combined'
-    ? '(Combined)'
     : (frontFile && backFile ? '(Both Panels)' : frontFile ? '(Front Panel)' : backFile ? '(Back Panel)' : '')
 
   return (
-    <div className="max-w-4xl mx-auto space-y-6">
+    <div className="max-w-4xl mx-auto space-y-6 px-4 sm:px-0">
       {/* Header */}
       <div>
         <h1 className="text-2xl font-bold text-white">Artwork Proofing</h1>
@@ -337,7 +434,7 @@ export default function Proofing() {
       </div>
 
       <div className="grid lg:grid-cols-2 gap-6 items-start">
-        {/* ── Left: Upload / SharePoint ── */}
+        {/* ── Left column: upload controls ── */}
         <div className="space-y-4">
 
           {/* Source mode toggle */}
@@ -345,9 +442,7 @@ export default function Proofing() {
             <button
               onClick={() => switchMode('upload')}
               className={`flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-all ${
-                sourceMode === 'upload'
-                  ? 'bg-indigo-600 text-white shadow'
-                  : 'text-slate-400 hover:text-slate-200'
+                sourceMode === 'upload' ? 'bg-indigo-600 text-white shadow' : 'text-slate-400 hover:text-slate-200'
               }`}
             >
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -358,9 +453,7 @@ export default function Proofing() {
             <button
               onClick={() => switchMode('sharepoint')}
               className={`flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-all ${
-                sourceMode === 'sharepoint'
-                  ? 'bg-indigo-600 text-white shadow'
-                  : 'text-slate-400 hover:text-slate-200'
+                sourceMode === 'sharepoint' ? 'bg-indigo-600 text-white shadow' : 'text-slate-400 hover:text-slate-200'
               }`}
             >
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -371,7 +464,7 @@ export default function Proofing() {
           </div>
 
           {/* Input area */}
-          <div className="card p-5 space-y-5">
+          <div className="card p-4 sm:p-5 space-y-5">
             <div className="flex items-center justify-between">
               <p className="text-slate-300 text-sm font-semibold">
                 {sourceMode === 'upload' ? 'Upload Artwork Panels' : 'Import from SharePoint'}
@@ -379,122 +472,75 @@ export default function Proofing() {
               <span className="text-slate-600 text-xs">Upload one or both panels</span>
             </div>
 
-            {sourceMode === 'upload' ? (
-              <>
-                {/* Panel mode sub-toggle */}
-                <div className="flex gap-1 bg-slate-800/50 rounded-lg p-1">
-                  <button
-                    onClick={() => switchPanelMode('separate')}
-                    className={`flex-1 text-xs px-3 py-1.5 rounded-md font-medium transition-all ${
-                      panelMode === 'separate' ? 'bg-slate-700 text-white shadow' : 'text-slate-500 hover:text-slate-300'
-                    }`}
-                  >
-                    Separate (Front &amp; Back)
-                  </button>
-                  <button
-                    onClick={() => switchPanelMode('combined')}
-                    className={`flex-1 text-xs px-3 py-1.5 rounded-md font-medium transition-all ${
-                      panelMode === 'combined' ? 'bg-slate-700 text-white shadow' : 'text-slate-500 hover:text-slate-300'
-                    }`}
-                  >
-                    Combined (one file)
-                  </button>
-                </div>
+            {/* Panel mode sub-toggle */}
+            <div className="flex gap-1 bg-slate-800/50 rounded-lg p-1">
+              <button
+                onClick={() => switchPanelMode('separate')}
+                className={`flex-1 text-xs px-3 py-1.5 rounded-md font-medium transition-all ${
+                  panelMode === 'separate' ? 'bg-slate-700 text-white shadow' : 'text-slate-500 hover:text-slate-300'
+                }`}
+              >
+                Separate (Front &amp; Back)
+              </button>
+              <button
+                onClick={() => switchPanelMode('combined')}
+                className={`flex-1 text-xs px-3 py-1.5 rounded-md font-medium transition-all ${
+                  panelMode === 'combined' ? 'bg-slate-700 text-white shadow' : 'text-slate-500 hover:text-slate-300'
+                }`}
+              >
+                Combined (one file)
+              </button>
+            </div>
 
-                {panelMode === 'separate' ? (
-                  <>
-                    <PanelUploadZone
-                      label="Front Panel"
-                      dotColor="bg-indigo-400"
-                      accentBorder="border-indigo-500"
-                      accentBg="bg-indigo-500/5"
-                      file={frontFile}
-                      preview={frontPreview}
-                      onFile={handleFrontFile}
-                      onRemove={() => { setFrontFile(null); setFrontPreview(null) }}
-                    />
-                    <div className="border-t border-slate-800/60" />
-                    <PanelUploadZone
-                      label="Back Panel"
-                      dotColor="bg-violet-400"
-                      accentBorder="border-violet-500"
-                      accentBg="bg-violet-500/5"
-                      file={backFile}
-                      preview={backPreview}
-                      onFile={handleBackFile}
-                      onRemove={() => { setBackFile(null); setBackPreview(null) }}
-                    />
-                  </>
-                ) : (
+            {sourceMode === 'upload' ? (
+              panelMode === 'separate' ? (
+                <>
                   <PanelUploadZone
-                    label="Front + Back Panel"
-                    hint="Single image or PDF containing both panels — drag or click"
-                    dotColor="bg-indigo-400"
-                    accentBorder="border-indigo-500"
-                    accentBg="bg-indigo-500/5"
-                    file={combinedFile}
-                    preview={combinedPreview}
-                    onFile={handleCombinedFile}
-                    onRemove={() => { setCombinedFile(null); setCombinedPreview(null) }}
+                    label="Front Panel" dotColor="bg-indigo-400"
+                    accentBorder="border-indigo-500" accentBg="bg-indigo-500/5"
+                    file={frontFile} preview={frontPreview}
+                    onFile={handleFrontFile}
+                    onRemove={() => { setFrontFile(null); setFrontPreview(null) }}
                   />
-                )}
-              </>
+                  <div className="border-t border-slate-800/60" />
+                  <PanelUploadZone
+                    label="Back Panel" dotColor="bg-violet-400"
+                    accentBorder="border-violet-500" accentBg="bg-violet-500/5"
+                    file={backFile} preview={backPreview}
+                    onFile={handleBackFile}
+                    onRemove={() => { setBackFile(null); setBackPreview(null) }}
+                  />
+                </>
+              ) : (
+                <PanelUploadZone
+                  label="Front + Back Panel"
+                  hint="Single image or PDF containing both panels — drag or click"
+                  dotColor="bg-indigo-400" accentBorder="border-indigo-500" accentBg="bg-indigo-500/5"
+                  file={combinedFile} preview={combinedPreview}
+                  onFile={handleCombinedFile}
+                  onRemove={() => { setCombinedFile(null); setCombinedPreview(null) }}
+                />
+              )
             ) : (
               <>
-                {/* Panel mode sub-toggle (same as upload) */}
-                <div className="flex gap-1 bg-slate-800/50 rounded-lg p-1">
-                  <button
-                    onClick={() => switchPanelMode('separate')}
-                    className={`flex-1 text-xs px-3 py-1.5 rounded-md font-medium transition-all ${
-                      panelMode === 'separate' ? 'bg-slate-700 text-white shadow' : 'text-slate-500 hover:text-slate-300'
-                    }`}
-                  >
-                    Separate (Front &amp; Back)
-                  </button>
-                  <button
-                    onClick={() => switchPanelMode('combined')}
-                    className={`flex-1 text-xs px-3 py-1.5 rounded-md font-medium transition-all ${
-                      panelMode === 'combined' ? 'bg-slate-700 text-white shadow' : 'text-slate-500 hover:text-slate-300'
-                    }`}
-                  >
-                    Combined (one file)
-                  </button>
-                </div>
-
                 <div className="bg-indigo-500/5 border border-indigo-500/20 rounded-lg px-3 py-2 text-xs text-indigo-300">
                   Paste SharePoint sharing link(s). Files must be shared or your Azure app must have access.
                 </div>
-
                 {panelMode === 'separate' ? (
                   <>
-                    <SharePointInput
-                      label="Front Panel"
-                      dotColor="bg-indigo-400"
-                      value={frontUrl}
-                      onChange={setFrontUrl}
-                    />
+                    <SharePointInput label="Front Panel" dotColor="bg-indigo-400" value={frontUrl} onChange={setFrontUrl} />
                     <div className="border-t border-slate-800/60" />
-                    <SharePointInput
-                      label="Back Panel"
-                      dotColor="bg-violet-400"
-                      value={backUrl}
-                      onChange={setBackUrl}
-                    />
+                    <SharePointInput label="Back Panel"  dotColor="bg-violet-400"  value={backUrl}  onChange={setBackUrl}  />
                   </>
                 ) : (
-                  <SharePointInput
-                    label="Front + Back Panel"
-                    dotColor="bg-indigo-400"
-                    value={combinedUrl}
-                    onChange={setCombinedUrl}
-                  />
+                  <SharePointInput label="Front + Back Panel" dotColor="bg-indigo-400" value={combinedUrl} onChange={setCombinedUrl} />
                 )}
               </>
             )}
           </div>
 
           {error && (
-            <div className="bg-red-500/10 border border-red-500/20 rounded-lg px-4 py-3 text-red-400 text-sm">{error}</div>
+            <div className="bg-red-500/10 border border-red-500/20 rounded-lg px-4 py-3 text-red-400 text-sm break-words">{error}</div>
           )}
 
           {hasInput && !result && (
@@ -520,9 +566,7 @@ export default function Proofing() {
 
           {result && (
             <div className="flex gap-2">
-              <button onClick={reset} className="btn-secondary flex-1 justify-center text-sm">
-                Proof Another
-              </button>
+              <button onClick={reset} className="btn-secondary flex-1 justify-center text-sm">Proof Another</button>
               <button
                 onClick={handleExportPDF}
                 className="btn-secondary flex items-center gap-2 px-4 text-sm text-emerald-400 border-emerald-500/20 hover:bg-emerald-500/10"
@@ -535,120 +579,47 @@ export default function Proofing() {
             </div>
           )}
 
+          {/* ── Mobile-only results (shown inline, below button) ── */}
+          {(loading || result) && (
+            <div className="lg:hidden space-y-4">
+              {loading && <LoadingCard step={loadingStep} />}
+              {result && !loading && (
+                <ResultsCard
+                  result={result} grouped={grouped}
+                  passCount={passCount} failCount={failCount} warnCount={warnCount}
+                />
+              )}
+            </div>
+          )}
+
           {/* What gets checked */}
           <div className="card p-4 space-y-3">
             <h3 className="text-slate-300 text-sm font-semibold">What gets checked</h3>
             {Object.entries(GROUP_META).map(([g, m]) => (
-              <div key={g} className="flex items-center gap-2">
-                <span className={`w-2 h-2 rounded-full ${m.color.replace('text-', 'bg-')}`} />
-                <span className={`text-xs font-medium ${m.color}`}>{m.label}</span>
-                <span className="text-slate-600 text-xs">
-                  {g === 'front'  && '— Identity, weight, flavor name & statement'}
-                  {g === 'back'   && '— SFP, UPC, directions, Manufactured By, origin'}
-                  {g === 'claims' && '— No medical claims, no unauthorized trademarks'}
-                </span>
+              <div key={g} className="flex items-start gap-2">
+                <span className={`w-2 h-2 rounded-full mt-1 flex-shrink-0 ${m.color.replace('text-', 'bg-')}`} />
+                <div>
+                  <span className={`text-xs font-medium ${m.color}`}>{m.label}</span>
+                  <span className="text-slate-600 text-xs ml-2">
+                    {g === 'front'  && '— Identity, weight, flavor name & statement'}
+                    {g === 'back'   && '— SFP, UPC, directions, Manufactured By, origin'}
+                    {g === 'claims' && '— No medical claims, no unauthorized trademarks'}
+                  </span>
+                </div>
               </div>
             ))}
           </div>
         </div>
 
-        {/* ── Right: Results ── */}
-        <div className="space-y-4">
-          {loading && (
-            <div className="card p-10 flex flex-col items-center gap-4 text-center">
-              <div className="w-14 h-14 rounded-2xl bg-indigo-600/20 flex items-center justify-center">
-                <svg className="animate-spin w-7 h-7 text-indigo-400" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                </svg>
-              </div>
-              <div>
-                <p className="text-white font-medium">Analyzing artwork…</p>
-                <p className="text-slate-500 text-sm mt-1">Claude is checking all 16 compliance requirements</p>
-              </div>
-              <div className="w-full space-y-2 text-left">
-                {['Detecting panels…', 'Checking front label elements…', 'Reviewing back panel…', 'Validating claims compliance…'].map((step, i) => (
-                  <div key={i} className="flex items-center gap-2 text-xs text-slate-500">
-                    <svg className="animate-spin w-3 h-3 text-indigo-400 flex-shrink-0" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                    </svg>
-                    {step}
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
+        {/* ── Right column: results (desktop only) ── */}
+        <div className="hidden lg:block space-y-4">
+          {loading && <LoadingCard step={loadingStep} />}
           {result && !loading && (
-            <>
-              {/* Overall result */}
-              <div className={`card p-5 flex items-start gap-4 border ${result.overall_pass ? 'border-emerald-500/30' : 'border-red-500/30'}`}>
-                <div className={`w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 ${result.overall_pass ? 'bg-emerald-500/10' : 'bg-red-500/10'}`}>
-                  {result.overall_pass ? (
-                    <svg className="w-5 h-5 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                  ) : (
-                    <svg className="w-5 h-5 text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" />
-                    </svg>
-                  )}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <p className={`font-semibold ${result.overall_pass ? 'text-emerald-400' : 'text-red-400'}`}>
-                      {result.overall_pass ? 'Artwork Approved' : 'Revisions Required'}
-                    </p>
-                    <span className="text-slate-600 text-xs border border-slate-700 px-1.5 py-0.5 rounded capitalize">
-                      {result.panel_detected} panel
-                    </span>
-                  </div>
-                  <p className="text-slate-400 text-sm mt-1">{result.summary}</p>
-                  <div className="flex items-center gap-3 mt-2 text-xs">
-                    <span className="text-emerald-400">{passCount} passed</span>
-                    {failCount > 0 && <span className="text-red-400">{failCount} failed</span>}
-                    {warnCount > 0 && <span className="text-amber-400">{warnCount} warnings</span>}
-                  </div>
-                </div>
-              </div>
-
-              {/* Dropbox upload confirmation */}
-              {result.dropbox_uploads?.length > 0 && (
-                <div className="card px-4 py-3 flex items-start gap-3 border border-blue-500/20 bg-blue-500/5">
-                  <svg className="w-4 h-4 text-blue-400 flex-shrink-0 mt-0.5" viewBox="0 0 24 24" fill="currentColor">
-                    <path d="M12 2L6 6.5l6 4.5 6-4.5L12 2zm-6 9.5L0 16l6 4.5 6-4.5-6-4.5zm12 0l-6 4.5 6 4.5 6-4.5-6-4.5zM6 21.5L12 26l6-4.5-6-4.5-6 4.5z"/>
-                  </svg>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-blue-300 text-xs font-semibold mb-1">Saved to Dropbox</p>
-                    <div className="space-y-0.5">
-                      {result.dropbox_uploads.map((u, i) => (
-                        <div key={i} className="flex items-center gap-2 text-xs">
-                          <span className="text-slate-500 capitalize">{u.panel}:</span>
-                          {u.url ? (
-                            <a href={u.url} target="_blank" rel="noopener noreferrer"
-                               className="text-blue-400 hover:text-blue-300 truncate underline underline-offset-2">
-                              {u.name}
-                            </a>
-                          ) : (
-                            <span className="text-slate-400 truncate">{u.name}</span>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Grouped checks */}
-              <div className="space-y-3">
-                {Object.entries(grouped).map(([g, checks]) => (
-                  <CheckGroup key={g} group={g} checks={checks} />
-                ))}
-              </div>
-            </>
+            <ResultsCard
+              result={result} grouped={grouped}
+              passCount={passCount} failCount={failCount} warnCount={warnCount}
+            />
           )}
-
           {!result && !loading && (
             <div className="card p-10 flex flex-col items-center gap-3 text-center text-slate-500">
               <svg className="w-10 h-10 opacity-30" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
