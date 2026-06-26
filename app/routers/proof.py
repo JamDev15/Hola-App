@@ -4,7 +4,7 @@ import asyncio
 import anthropic
 from typing import Optional
 from pydantic import BaseModel
-from fastapi import APIRouter, UploadFile, File, HTTPException
+from fastapi import APIRouter, UploadFile, File, HTTPException, Form
 from app.config import settings
 from app import dropbox as dropbox_util
 
@@ -84,6 +84,39 @@ Evaluate every check below. If a panel is not visible in the image, mark its che
     PASS only if all required elements for the visible panels are accounted for.
 
 Be precise. Use "warning" when text is partially visible or ambiguous."""
+
+REVISION_PROMPT_TEMPLATE = """You are a SENIOR FDA regulatory compliance expert and packaging artwork proofer with 20+ years in nutraceutical supplement labeling. You are conducting Revision Round {round} of this artwork analysis — your findings are final before this label goes to press.
+
+PREVIOUS ANALYSIS (Round {prev_round}):
+{previous_findings}
+
+YOUR MISSION FOR ROUND {round}:
+1. Every check marked "warning" MUST now become "pass" or "fail" — look harder, be definitive
+2. Every check marked "pass" — confirm it is genuinely correct, not assumed
+3. Every check marked "fail" — verify the violation is real, correct it if you were wrong
+4. Search for anything the previous round missed entirely
+5. Scrutinize fine print, small fonts, partial visibility, and cut-off edges with maximum precision
+
+Eliminate ALL uncertainty. You are the final expert authority.
+
+Return ONLY a JSON object (no other text):
+{{
+  "panel_detected": "front" | "back" | "both" | "unclear",
+  "overall_pass": true | false,
+  "summary": "Concise Round {round} assessment",
+  "checks": [
+    {{
+      "id": "check_id",
+      "label": "Check Label",
+      "group": "front" | "back" | "claims",
+      "status": "pass" | "fail" | "warning" | "not_applicable",
+      "finding": "What you confirmed or corrected in Round {round}",
+      "recommendation": "What needs fixing, or empty string if pass"
+    }}
+  ]
+}}
+
+Use the SAME check IDs from the previous round. Re-evaluate every single check."""
 
 
 async def _analyze(content: list) -> dict:
@@ -224,4 +257,47 @@ async def proof_from_sharepoint(req: SharePointProofRequest):
     uploads = [r for r in results[1:] if isinstance(r, dict)]
     if uploads:
         result["dropbox_uploads"] = uploads
+    return result
+
+
+# ── Revision endpoint ────────────────────────────────────────────────────────
+
+@router.post("/revise")
+async def revise_proof(
+    round: int = Form(2),
+    previous_findings: str = Form(...),
+    front_file: Optional[UploadFile] = File(None),
+    back_file: Optional[UploadFile] = File(None),
+    combined_file: Optional[UploadFile] = File(None),
+):
+    if not front_file and not back_file and not combined_file:
+        raise HTTPException(400, "Re-upload at least one panel image for revision")
+    if round < 2 or round > 3:
+        raise HTTPException(400, "Revision round must be 2 or 3")
+
+    try:
+        prev = json.loads(previous_findings)
+    except Exception:
+        raise HTTPException(400, "Invalid previous_findings JSON")
+
+    content = []
+    if combined_file:
+        data, mime = await _read_panel(combined_file, "Combined")
+        content += [{"type": "text", "text": "[COMBINED FRONT + BACK PANELS]"}, _content_block(data, mime)]
+    if front_file:
+        data, mime = await _read_panel(front_file, "Front")
+        content += [{"type": "text", "text": "[FRONT PANEL]"}, _content_block(data, mime)]
+    if back_file:
+        data, mime = await _read_panel(back_file, "Back")
+        content += [{"type": "text", "text": "[BACK PANEL]"}, _content_block(data, mime)]
+
+    prompt = REVISION_PROMPT_TEMPLATE.format(
+        round=round,
+        prev_round=round - 1,
+        previous_findings=json.dumps(prev, indent=2),
+    )
+    content.append({"type": "text", "text": prompt})
+
+    result = await _analyze(content)
+    result["revision_round"] = round
     return result

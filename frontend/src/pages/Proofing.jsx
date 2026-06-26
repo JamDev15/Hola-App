@@ -249,7 +249,8 @@ function SharePointInput({ label, dotColor, value, onChange }) {
 
 // ── Loading card ──────────────────────────────────────────────────────────────
 
-function LoadingCard({ step }) {
+function LoadingCard({ step, round }) {
+  const isRevision = round > 1
   return (
     <div className="card p-6 sm:p-10 flex flex-col items-center gap-4 text-center">
       <div className="w-14 h-14 rounded-2xl bg-indigo-600/20 flex items-center justify-center">
@@ -259,8 +260,8 @@ function LoadingCard({ step }) {
         </svg>
       </div>
       <div>
-        <p className="text-white font-medium">Analyzing artwork…</p>
-        <p className="text-slate-500 text-xs mt-1">Large files may take 20–30 seconds</p>
+        <p className="text-white font-medium">{isRevision ? `Expert Revision — Round ${round}…` : 'Analyzing artwork…'}</p>
+        <p className="text-slate-500 text-xs mt-1">{isRevision ? 'Senior AI expert re-examining all findings…' : 'Large files may take 20–30 seconds'}</p>
       </div>
       <div className="w-full space-y-2 text-left">
         {LOADING_STEPS.map((s, i) => (
@@ -287,7 +288,7 @@ function LoadingCard({ step }) {
 
 // ── Results card ──────────────────────────────────────────────────────────────
 
-function ResultsCard({ result, grouped, passCount, failCount, warnCount }) {
+function ResultsCard({ result, grouped, passCount, failCount, warnCount, round }) {
   return (
     <>
       <div className={`card p-4 sm:p-5 flex items-start gap-4 border ${result.overall_pass ? 'border-emerald-500/30' : 'border-red-500/30'}`}>
@@ -310,6 +311,11 @@ function ResultsCard({ result, grouped, passCount, failCount, warnCount }) {
             <span className="text-slate-600 text-xs border border-slate-700 px-1.5 py-0.5 rounded capitalize">
               {result.panel_detected} panel
             </span>
+            {round > 1 && (
+              <span className="text-xs bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 px-1.5 py-0.5 rounded">
+                Round {round}
+              </span>
+            )}
           </div>
           <p className="text-slate-400 text-sm mt-1">{result.summary}</p>
           <div className="flex items-center gap-3 mt-2 text-xs">
@@ -372,11 +378,12 @@ export default function Proofing() {
   const [backUrl,     setBackUrl]     = useState('')
   const [combinedUrl, setCombinedUrl] = useState('')
 
-  const [loading,     setLoading]     = useState(false)
-  const [loadingStep, setLoadingStep] = useState(0)
-  const [result,      setResult]      = useState(null)
-  const [error,       setError]       = useState('')
-  const [lightbox,    setLightbox]    = useState(null)
+  const [loading,        setLoading]       = useState(false)
+  const [loadingStep,    setLoadingStep]   = useState(0)
+  const [result,         setResult]        = useState(null)
+  const [error,          setError]         = useState('')
+  const [lightbox,       setLightbox]      = useState(null)
+  const [analysisRound,  setAnalysisRound] = useState(0)
 
   // Cycle through loading steps while analyzing
   useEffect(() => {
@@ -395,6 +402,30 @@ export default function Proofing() {
     }
   }
 
+  const makeThumbnail = (dataUrl) => new Promise(resolve => {
+    if (!dataUrl) return resolve(null)
+    const img = new Image()
+    img.onload = () => {
+      const canvas = document.createElement('canvas')
+      const scale = Math.min(200 / img.width, 120 / img.height, 1)
+      canvas.width = Math.round(img.width * scale)
+      canvas.height = Math.round(img.height * scale)
+      canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height)
+      resolve(canvas.toDataURL('image/jpeg', 0.65))
+    }
+    img.onerror = () => resolve(null)
+    img.src = dataUrl
+  })
+
+  const saveToSession = async (data, round) => {
+    try {
+      const preview = combinedPreview || frontPreview || backPreview || null
+      const thumbnail = await makeThumbnail(preview)
+      const fileName = combinedFile?.name || frontFile?.name || backFile?.name || null
+      sessionStorage.setItem('lastProof', JSON.stringify({ result: data, round, fileName, thumbnail, timestamp: Date.now() }))
+    } catch {}
+  }
+
   const handleFrontFile    = useCallback((f) => { setFrontFile(f);    setResult(null); setError(''); readPreview(f, setFrontPreview)    }, [])
   const handleBackFile     = useCallback((f) => { setBackFile(f);     setResult(null); setError(''); readPreview(f, setBackPreview)     }, [])
   const handleCombinedFile = useCallback((f) => { setCombinedFile(f); setResult(null); setError(''); readPreview(f, setCombinedPreview) }, [])
@@ -410,7 +441,7 @@ export default function Proofing() {
 
   const handleAnalyze = async () => {
     if (!hasInput) return
-    setLoading(true); setError(''); setResult(null)
+    setLoading(true); setError(''); setResult(null); setAnalysisRound(0)
     try {
       let data
       if (sourceMode === 'sharepoint') {
@@ -423,8 +454,31 @@ export default function Proofing() {
         data = await api.proof({ frontFile, backFile })
       }
       setResult(data)
+      setAnalysisRound(1)
+      saveToSession(data, 1)
     } catch (err) {
       setError(err.message || 'Analysis failed.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleRevise = async () => {
+    if (!result || sourceMode === 'sharepoint') return
+    const nextRound = analysisRound + 1
+    setLoading(true); setError('')
+    try {
+      let data
+      if (panelMode === 'combined') {
+        data = await api.reviseProof({ combinedFile, previousFindings: result, round: nextRound })
+      } else {
+        data = await api.reviseProof({ frontFile, backFile, previousFindings: result, round: nextRound })
+      }
+      setResult(data)
+      setAnalysisRound(nextRound)
+      saveToSession(data, nextRound)
+    } catch (err) {
+      setError(err.message || 'Revision failed.')
     } finally {
       setLoading(false)
     }
@@ -435,7 +489,7 @@ export default function Proofing() {
     setBackFile(null);     setBackPreview(null)
     setCombinedFile(null); setCombinedPreview(null)
     setFrontUrl('');       setBackUrl('');     setCombinedUrl('')
-    setResult(null);       setError('')
+    setResult(null);       setError('');       setAnalysisRound(0)
   }
 
   const handleExportPDF = () => {
@@ -629,14 +683,52 @@ export default function Proofing() {
             </div>
           )}
 
+          {/* ── Revision button ── */}
+          {result && !loading && analysisRound > 0 && analysisRound < 3 && sourceMode === 'upload' && (
+            <div className="card p-4 border border-indigo-500/20 bg-indigo-500/5 space-y-3">
+              <div className="flex items-center gap-2">
+                {[1, 2, 3].map(r => (
+                  <div key={r} className={`w-2 h-2 rounded-full transition-colors ${r <= analysisRound ? 'bg-indigo-400' : 'bg-slate-700'}`} />
+                ))}
+                <span className="text-slate-500 text-xs ml-1">Round {analysisRound} of 3</span>
+              </div>
+              <div className="flex items-start gap-3">
+                <div className="flex-1">
+                  <p className="text-indigo-300 text-sm font-semibold">
+                    {warnCount > 0 ? `${warnCount} warning${warnCount > 1 ? 's' : ''} — refine for certainty` : 'Run deeper expert review'}
+                  </p>
+                  <p className="text-slate-500 text-xs mt-0.5">
+                    AI re-examines as a senior artwork expert, resolving all uncertainty
+                  </p>
+                </div>
+                <button onClick={handleRevise} disabled={loading} className="btn-primary text-sm whitespace-nowrap flex-shrink-0">
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
+                  </svg>
+                  {analysisRound === 1 ? 'Expert Revision' : 'Final Check'}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {result && !loading && analysisRound === 3 && (
+            <div className="card px-4 py-3 flex items-center gap-2 border border-emerald-500/20 bg-emerald-500/5">
+              <svg className="w-4 h-4 text-emerald-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <p className="text-emerald-400 text-xs font-semibold">Final expert analysis complete — all 3 rounds done</p>
+            </div>
+          )}
+
           {/* ── Mobile-only results (shown inline, below button) ── */}
           {(loading || result) && (
             <div className="lg:hidden space-y-4">
-              {loading && <LoadingCard step={loadingStep} />}
+              {loading && <LoadingCard step={loadingStep} round={analysisRound} />}
               {result && !loading && (
                 <ResultsCard
                   result={result} grouped={grouped}
                   passCount={passCount} failCount={failCount} warnCount={warnCount}
+                  round={analysisRound}
                 />
               )}
             </div>
@@ -663,11 +755,12 @@ export default function Proofing() {
 
         {/* ── Right column: results (desktop only) ── */}
         <div className="hidden lg:block space-y-4">
-          {loading && <LoadingCard step={loadingStep} />}
+          {loading && <LoadingCard step={loadingStep} round={analysisRound} />}
           {result && !loading && (
             <ResultsCard
               result={result} grouped={grouped}
               passCount={passCount} failCount={failCount} warnCount={warnCount}
+              round={analysisRound}
             />
           )}
           {!result && !loading && (

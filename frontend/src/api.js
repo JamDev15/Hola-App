@@ -46,6 +46,20 @@ export const api = {
     if (!res.ok) throw new Error(data.detail || 'Proof request failed')
     return data
   },
+  reviseProof: async ({ frontFile, backFile, combinedFile, previousFindings, round }) => {
+    const form = new FormData()
+    form.append('round', String(round))
+    form.append('previous_findings', JSON.stringify(previousFindings))
+    if (combinedFile) form.append('combined_file', combinedFile)
+    if (frontFile)    form.append('front_file', frontFile)
+    if (backFile)     form.append('back_file', backFile)
+    const res = await fetch(`${DIRECT_BASE}/proof/revise`, { method: 'POST', body: form })
+    const text = await res.text()
+    let data
+    try { data = JSON.parse(text) } catch { throw new Error(text || 'Revision failed') }
+    if (!res.ok) throw new Error(data.detail || 'Revision failed')
+    return data
+  },
   proofFromSharePoint: ({ frontUrl, backUrl, combinedUrl }) =>
     req('/proof/sharepoint', {
       method: 'POST',
