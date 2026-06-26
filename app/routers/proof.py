@@ -89,12 +89,12 @@ Be precise. Use "warning" when text is partially visible or ambiguous."""
 async def _analyze(content: list) -> dict:
     """Send content blocks to Claude and return parsed compliance JSON."""
     try:
-        async with anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key) as client:
-            response = await client.messages.create(
-                model=settings.anthropic_model,
-                max_tokens=4096,
-                messages=[{"role": "user", "content": content}],
-            )
+        client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
+        response = await client.messages.create(
+            model=settings.anthropic_model,
+            max_tokens=4096,
+            messages=[{"role": "user", "content": content}],
+        )
         text = response.content[0].text if response.content else ""
     except Exception as e:
         raise HTTPException(500, f"AI analysis failed: {str(e)}")
