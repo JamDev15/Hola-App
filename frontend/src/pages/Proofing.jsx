@@ -90,7 +90,41 @@ function CheckGroup({ group, checks }) {
 
 const ACCEPT = 'image/jpeg,image/png,image/webp,image/gif,application/pdf,.pdf'
 
-function FilePreview({ file, preview }) {
+function ImageLightbox({ src, name, onClose }) {
+  useEffect(() => {
+    const handler = (e) => e.key === 'Escape' && onClose()
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [onClose])
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 backdrop-blur-sm p-4"
+      onClick={(e) => e.target === e.currentTarget && onClose()}
+    >
+      <div className="relative max-w-6xl w-full max-h-[90vh] flex flex-col">
+        <div className="flex items-center justify-between mb-3">
+          <span className="text-slate-300 text-sm truncate">{name}</span>
+          <button
+            onClick={onClose}
+            className="ml-4 flex-shrink-0 w-8 h-8 rounded-full bg-slate-800 hover:bg-slate-700 flex items-center justify-center transition-colors"
+          >
+            <svg className="w-4 h-4 text-slate-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+        <img
+          src={src}
+          alt="Artwork"
+          className="w-full h-full object-contain rounded-xl max-h-[82vh]"
+        />
+      </div>
+    </div>
+  )
+}
+
+function FilePreview({ file, preview, onExpand }) {
   if (!file) return null
   if (file.type === 'application/pdf') {
     return (
@@ -109,7 +143,16 @@ function FilePreview({ file, preview }) {
   }
   return (
     <div className="card overflow-hidden">
-      <img src={preview} alt="Artwork" className="w-full object-contain max-h-44 bg-slate-900" />
+      <div className="relative group cursor-zoom-in" onClick={() => onExpand?.(preview, file.name)}>
+        <img src={preview} alt="Artwork" className="w-full object-contain max-h-44 bg-slate-900" />
+        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors flex items-center justify-center">
+          <div className="opacity-0 group-hover:opacity-100 transition-opacity bg-slate-900/80 rounded-full p-2">
+            <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607zM10.5 7.5v6m3-3h-6" />
+            </svg>
+          </div>
+        </div>
+      </div>
       <div className="px-3 py-2 border-t border-slate-800">
         <span className="text-slate-500 text-xs truncate block">{file.name}</span>
       </div>
@@ -117,7 +160,7 @@ function FilePreview({ file, preview }) {
   )
 }
 
-function PanelUploadZone({ label, hint, accentBorder, accentBg, dotColor, file, preview, onFile, onRemove }) {
+function PanelUploadZone({ label, hint, accentBorder, accentBg, dotColor, file, preview, onFile, onRemove, onExpand }) {
   const inputRef = useRef()
   const [dragging, setDragging] = useState(false)
 
@@ -163,7 +206,7 @@ function PanelUploadZone({ label, hint, accentBorder, accentBg, dotColor, file, 
           <input ref={inputRef} type="file" accept={ACCEPT} className="hidden" onChange={e => handleFile(e.target.files[0])} />
         </div>
       ) : (
-        <FilePreview file={file} preview={preview} />
+        <FilePreview file={file} preview={preview} onExpand={onExpand} />
       )}
     </div>
   )
@@ -333,6 +376,7 @@ export default function Proofing() {
   const [loadingStep, setLoadingStep] = useState(0)
   const [result,      setResult]      = useState(null)
   const [error,       setError]       = useState('')
+  const [lightbox,    setLightbox]    = useState(null)
 
   // Cycle through loading steps while analyzing
   useEffect(() => {
@@ -427,6 +471,9 @@ export default function Proofing() {
 
   return (
     <div className="max-w-4xl mx-auto space-y-6 px-4 sm:px-0">
+      {lightbox && (
+        <ImageLightbox src={lightbox.src} name={lightbox.name} onClose={() => setLightbox(null)} />
+      )}
       {/* Header */}
       <div>
         <h1 className="text-2xl font-bold text-white">Artwork Proofing</h1>
@@ -501,6 +548,7 @@ export default function Proofing() {
                     file={frontFile} preview={frontPreview}
                     onFile={handleFrontFile}
                     onRemove={() => { setFrontFile(null); setFrontPreview(null) }}
+                    onExpand={(src, name) => setLightbox({ src, name })}
                   />
                   <div className="border-t border-slate-800/60" />
                   <PanelUploadZone
@@ -509,6 +557,7 @@ export default function Proofing() {
                     file={backFile} preview={backPreview}
                     onFile={handleBackFile}
                     onRemove={() => { setBackFile(null); setBackPreview(null) }}
+                    onExpand={(src, name) => setLightbox({ src, name })}
                   />
                 </>
               ) : (
@@ -519,6 +568,7 @@ export default function Proofing() {
                   file={combinedFile} preview={combinedPreview}
                   onFile={handleCombinedFile}
                   onRemove={() => { setCombinedFile(null); setCombinedPreview(null) }}
+                  onExpand={(src, name) => setLightbox({ src, name })}
                 />
               )
             ) : (
