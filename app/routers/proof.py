@@ -406,28 +406,42 @@ async def verify_final_proof(
     if not (final_front_file or final_back_file or final_combined_file):
         raise HTTPException(400, "Upload the final proof file to verify")
 
-    content = [{"type": "text", "text": "=== APPROVED VERSION (already signed off) ==="}]
+    approved_blocks = []
     if approved_combined_file:
         data, mime = await _read_panel(approved_combined_file, "Approved combined")
-        content += [{"type": "text", "text": "[APPROVED — COMBINED FRONT + BACK]"}, _content_block(data, mime)]
+        approved_blocks += [{"type": "text", "text": "[APPROVED — COMBINED FRONT + BACK]"}, _content_block(data, mime)]
     if approved_front_file:
         data, mime = await _read_panel(approved_front_file, "Approved front")
-        content += [{"type": "text", "text": "[APPROVED — FRONT PANEL]"}, _content_block(data, mime)]
+        approved_blocks += [{"type": "text", "text": "[APPROVED — FRONT PANEL]"}, _content_block(data, mime)]
     if approved_back_file:
         data, mime = await _read_panel(approved_back_file, "Approved back")
-        content += [{"type": "text", "text": "[APPROVED — BACK PANEL]"}, _content_block(data, mime)]
+        approved_blocks += [{"type": "text", "text": "[APPROVED — BACK PANEL]"}, _content_block(data, mime)]
 
-    content.append({"type": "text", "text": "=== FINAL PROOF VERSION (about to be sent to production) ==="})
+    final_blocks = []
     if final_combined_file:
         data, mime = await _read_panel(final_combined_file, "Final proof combined")
-        content += [{"type": "text", "text": "[FINAL PROOF — COMBINED FRONT + BACK]"}, _content_block(data, mime)]
+        final_blocks += [{"type": "text", "text": "[FINAL PROOF — COMBINED FRONT + BACK]"}, _content_block(data, mime)]
     if final_front_file:
         data, mime = await _read_panel(final_front_file, "Final proof front")
-        content += [{"type": "text", "text": "[FINAL PROOF — FRONT PANEL]"}, _content_block(data, mime)]
+        final_blocks += [{"type": "text", "text": "[FINAL PROOF — FRONT PANEL]"}, _content_block(data, mime)]
     if final_back_file:
         data, mime = await _read_panel(final_back_file, "Final proof back")
-        content += [{"type": "text", "text": "[FINAL PROOF — BACK PANEL]"}, _content_block(data, mime)]
+        final_blocks += [{"type": "text", "text": "[FINAL PROOF — BACK PANEL]"}, _content_block(data, mime)]
 
-    content.append({"type": "text", "text": VERIFY_PROMPT})
+    # 1) Diff the final proof against the approved version
+    diff_content = [{"type": "text", "text": "=== APPROVED VERSION (already signed off) ==="}]
+    diff_content += approved_blocks
+    diff_content.append({"type": "text", "text": "=== FINAL PROOF VERSION (about to be sent to production) ==="})
+    diff_content += final_blocks
+    diff_content.append({"type": "text", "text": VERIFY_PROMPT})
 
-    return await _verify(content)
+    # 2) Independently re-run the full compliance check (spelling, spacing, all 19 checks)
+    #    against the final proof file itself, in case anything slipped in during file prep
+    compliance_content = list(final_blocks) + [{"type": "text", "text": PROOF_PROMPT}]
+
+    diff_result, compliance_result = await asyncio.gather(
+        _verify(diff_content),
+        _analyze(compliance_content),
+    )
+    diff_result["finalComplianceCheck"] = compliance_result
+    return diff_result

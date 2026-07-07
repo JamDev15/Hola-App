@@ -465,6 +465,15 @@ export default function Proofing() {
   const [resuming,    setResuming]    = useState(false)
   const [markingDone, setMarkingDone] = useState(false)
 
+  const [verifyPanelMode, setVerifyPanelMode] = useState('combined')
+
+  const [approvedFrontFile,    setApprovedFrontFile]    = useState(null)
+  const [approvedFrontPreview, setApprovedFrontPreview] = useState(null)
+  const [approvedBackFile,     setApprovedBackFile]     = useState(null)
+  const [approvedBackPreview,  setApprovedBackPreview]  = useState(null)
+  const [approvedCombinedFile,    setApprovedCombinedFile]    = useState(null)
+  const [approvedCombinedPreview, setApprovedCombinedPreview] = useState(null)
+
   const [finalFrontFile,    setFinalFrontFile]    = useState(null)
   const [finalFrontPreview, setFinalFrontPreview] = useState(null)
   const [finalBackFile,     setFinalBackFile]     = useState(null)
@@ -626,11 +635,14 @@ export default function Proofing() {
     }
   }
 
-  const handleFinalFrontFile    = useCallback((f) => { setFinalFrontFile(f);    readPreview(f, setFinalFrontPreview);    setVerifyResult(null); setVerifyError('') }, [])
-  const handleFinalBackFile     = useCallback((f) => { setFinalBackFile(f);     readPreview(f, setFinalBackPreview);     setVerifyResult(null); setVerifyError('') }, [])
-  const handleFinalCombinedFile = useCallback((f) => { setFinalCombinedFile(f); readPreview(f, setFinalCombinedPreview); setVerifyResult(null); setVerifyError('') }, [])
+  const handleApprovedFrontFile    = useCallback((f) => { setApprovedFrontFile(f);    readPreview(f, setApprovedFrontPreview);    setVerifyResult(null); setVerifyError('') }, [])
+  const handleApprovedBackFile     = useCallback((f) => { setApprovedBackFile(f);     readPreview(f, setApprovedBackPreview);     setVerifyResult(null); setVerifyError('') }, [])
+  const handleApprovedCombinedFile = useCallback((f) => { setApprovedCombinedFile(f); readPreview(f, setApprovedCombinedPreview); setVerifyResult(null); setVerifyError('') }, [])
+  const handleFinalFrontFile       = useCallback((f) => { setFinalFrontFile(f);       readPreview(f, setFinalFrontPreview);       setVerifyResult(null); setVerifyError('') }, [])
+  const handleFinalBackFile        = useCallback((f) => { setFinalBackFile(f);        readPreview(f, setFinalBackPreview);        setVerifyResult(null); setVerifyError('') }, [])
+  const handleFinalCombinedFile    = useCallback((f) => { setFinalCombinedFile(f);    readPreview(f, setFinalCombinedPreview);    setVerifyResult(null); setVerifyError('') }, [])
 
-  const hasApprovedArtwork = !!(combinedFile || frontFile || backFile)
+  const hasApprovedArtwork = !!(approvedCombinedFile || approvedFrontFile || approvedBackFile)
   const hasFinalProofFile  = !!(finalCombinedFile || finalFrontFile || finalBackFile)
 
   const handleVerifyFinalProof = async () => {
@@ -638,7 +650,7 @@ export default function Proofing() {
     setVerifying(true); setVerifyError(''); setVerifyResult(null)
     try {
       const data = await api.verifyFinalProof({
-        approvedFrontFile: frontFile, approvedBackFile: backFile, approvedCombinedFile: combinedFile,
+        approvedFrontFile, approvedBackFile, approvedCombinedFile,
         finalFrontFile, finalBackFile, finalCombinedFile,
       })
       setVerifyResult(data)
@@ -660,6 +672,9 @@ export default function Proofing() {
     setFrontUrl('');       setBackUrl('');     setCombinedUrl('')
     setResult(null);       setError('');       setAnalysisRound(0)
     setJobId(null);        setJobStatus(null)
+    setApprovedFrontFile(null);    setApprovedFrontPreview(null)
+    setApprovedBackFile(null);     setApprovedBackPreview(null)
+    setApprovedCombinedFile(null); setApprovedCombinedPreview(null)
     setFinalFrontFile(null);    setFinalFrontPreview(null)
     setFinalBackFile(null);     setFinalBackPreview(null)
     setFinalCombinedFile(null); setFinalCombinedPreview(null)
@@ -1001,32 +1016,86 @@ export default function Proofing() {
 
           {/* ── Final Proof Verification ── */}
           {result && !loading && (
-            <div className="card p-4 sm:p-5 space-y-3 border border-amber-500/20 bg-amber-500/5">
-              <div className="flex items-center gap-2">
-                <svg className="w-4 h-4 text-amber-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-                <p className="text-amber-300 text-sm font-semibold">Final Proof Verification</p>
+            <div className="card p-4 sm:p-5 space-y-4 border border-amber-500/20 bg-amber-500/5">
+              <div>
+                <div className="flex items-center gap-2">
+                  <svg className="w-4 h-4 text-amber-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <p className="text-amber-300 text-sm font-semibold">Final Proof Verification</p>
+                </div>
+                <p className="text-slate-500 text-xs mt-1">
+                  Before sending to the manufacturer, upload the recent approved proof and the final signed print-ready file. We'll confirm they match exactly, and independently recheck the final file's spelling, spacing, and all {TOTAL_CHECKS} compliance checks.
+                </p>
               </div>
-              <p className="text-slate-500 text-xs">
-                Before sending to the manufacturer, upload the exact final print-ready file here to confirm it matches the approved artwork above with zero changes.
-              </p>
 
-              {!hasApprovedArtwork ? (
-                <p className="text-amber-400 text-xs">Re-upload the approved artwork above first, so it can be compared against.</p>
-              ) : panelMode === 'combined' ? (
-                <PanelUploadZone
-                  label="Final Proof (Combined)"
-                  hint="The exact file about to go to the manufacturer — drag or click"
-                  dotColor="bg-amber-400" accentBorder="border-amber-500" accentBg="bg-amber-500/5"
-                  file={finalCombinedFile} preview={finalCombinedPreview}
-                  onFile={handleFinalCombinedFile}
-                  onRemove={() => { setFinalCombinedFile(null); setFinalCombinedPreview(null); setVerifyResult(null) }}
-                  onExpand={(src, name) => setLightbox({ src, name })}
-                />
-              ) : (
-                <>
-                  {frontFile && (
+              <div className="flex gap-1 bg-slate-800/50 rounded-lg p-1">
+                <button
+                  onClick={() => setVerifyPanelMode('combined')}
+                  className={`flex-1 text-xs px-3 py-1.5 rounded-md font-medium transition-all ${
+                    verifyPanelMode === 'combined' ? 'bg-slate-700 text-white shadow' : 'text-slate-500 hover:text-slate-300'
+                  }`}
+                >
+                  Combined (one file each)
+                </button>
+                <button
+                  onClick={() => setVerifyPanelMode('separate')}
+                  className={`flex-1 text-xs px-3 py-1.5 rounded-md font-medium transition-all ${
+                    verifyPanelMode === 'separate' ? 'bg-slate-700 text-white shadow' : 'text-slate-500 hover:text-slate-300'
+                  }`}
+                >
+                  Separate (Front &amp; Back)
+                </button>
+              </div>
+
+              <div className="space-y-2">
+                <p className="text-teal-400 text-xs font-semibold uppercase tracking-wide">Recent / Approved Proof</p>
+                {verifyPanelMode === 'combined' ? (
+                  <PanelUploadZone
+                    label="Approved Proof (Combined)"
+                    hint="The version already reviewed and signed off — drag or click"
+                    dotColor="bg-teal-400" accentBorder="border-teal-500" accentBg="bg-teal-500/5"
+                    file={approvedCombinedFile} preview={approvedCombinedPreview}
+                    onFile={handleApprovedCombinedFile}
+                    onRemove={() => { setApprovedCombinedFile(null); setApprovedCombinedPreview(null); setVerifyResult(null) }}
+                    onExpand={(src, name) => setLightbox({ src, name })}
+                  />
+                ) : (
+                  <>
+                    <PanelUploadZone
+                      label="Approved Proof — Front Panel"
+                      dotColor="bg-teal-400" accentBorder="border-teal-500" accentBg="bg-teal-500/5"
+                      file={approvedFrontFile} preview={approvedFrontPreview}
+                      onFile={handleApprovedFrontFile}
+                      onRemove={() => { setApprovedFrontFile(null); setApprovedFrontPreview(null); setVerifyResult(null) }}
+                      onExpand={(src, name) => setLightbox({ src, name })}
+                    />
+                    <PanelUploadZone
+                      label="Approved Proof — Back Panel"
+                      dotColor="bg-teal-400" accentBorder="border-teal-500" accentBg="bg-teal-500/5"
+                      file={approvedBackFile} preview={approvedBackPreview}
+                      onFile={handleApprovedBackFile}
+                      onRemove={() => { setApprovedBackFile(null); setApprovedBackPreview(null); setVerifyResult(null) }}
+                      onExpand={(src, name) => setLightbox({ src, name })}
+                    />
+                  </>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <p className="text-amber-400 text-xs font-semibold uppercase tracking-wide">Final Proof (Signed / Print-Ready)</p>
+                {verifyPanelMode === 'combined' ? (
+                  <PanelUploadZone
+                    label="Final Proof (Combined)"
+                    hint="The exact file about to go to the manufacturer — drag or click"
+                    dotColor="bg-amber-400" accentBorder="border-amber-500" accentBg="bg-amber-500/5"
+                    file={finalCombinedFile} preview={finalCombinedPreview}
+                    onFile={handleFinalCombinedFile}
+                    onRemove={() => { setFinalCombinedFile(null); setFinalCombinedPreview(null); setVerifyResult(null) }}
+                    onExpand={(src, name) => setLightbox({ src, name })}
+                  />
+                ) : (
+                  <>
                     <PanelUploadZone
                       label="Final Proof — Front Panel"
                       dotColor="bg-amber-400" accentBorder="border-amber-500" accentBg="bg-amber-500/5"
@@ -1035,8 +1104,6 @@ export default function Proofing() {
                       onRemove={() => { setFinalFrontFile(null); setFinalFrontPreview(null); setVerifyResult(null) }}
                       onExpand={(src, name) => setLightbox({ src, name })}
                     />
-                  )}
-                  {backFile && (
                     <PanelUploadZone
                       label="Final Proof — Back Panel"
                       dotColor="bg-amber-400" accentBorder="border-amber-500" accentBg="bg-amber-500/5"
@@ -1045,9 +1112,9 @@ export default function Proofing() {
                       onRemove={() => { setFinalBackFile(null); setFinalBackPreview(null); setVerifyResult(null) }}
                       onExpand={(src, name) => setLightbox({ src, name })}
                     />
-                  )}
-                </>
-              )}
+                  </>
+                )}
+              </div>
 
               {hasApprovedArtwork && hasFinalProofFile && (
                 <button
@@ -1061,7 +1128,7 @@ export default function Proofing() {
                         <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                         <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
                       </svg>
-                      Comparing to approved artwork…
+                      Comparing &amp; rechecking final proof…
                     </>
                   ) : 'Verify No Changes'}
                 </button>
@@ -1072,39 +1139,63 @@ export default function Proofing() {
               )}
 
               {verifyResult && (
-                verifyResult.identical ? (
-                  <div className="flex items-center gap-2 bg-emerald-500/10 border border-emerald-500/20 rounded-lg px-3 py-2">
-                    <svg className="w-4 h-4 text-emerald-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                    <p className="text-emerald-400 text-xs font-semibold">
-                      {verifyResult.summary || 'Final proof matches the approved artwork exactly — safe to send to production.'}
-                    </p>
-                  </div>
-                ) : (
-                  <div className="space-y-2">
-                    <div className="flex items-start gap-2 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">
-                      <svg className="w-4 h-4 text-red-400 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126z" />
+                <div className="space-y-4">
+                  {verifyResult.identical ? (
+                    <div className="flex items-center gap-2 bg-emerald-500/10 border border-emerald-500/20 rounded-lg px-3 py-2">
+                      <svg className="w-4 h-4 text-emerald-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                       </svg>
-                      <p className="text-red-400 text-xs font-semibold">{verifyResult.summary || 'Differences found between the approved artwork and the final proof.'}</p>
+                      <p className="text-emerald-400 text-xs font-semibold">
+                        {verifyResult.summary || 'Final proof matches the approved artwork exactly — safe to send to production.'}
+                      </p>
                     </div>
-                    {verifyResult.differences?.map((d, i) => (
-                      <div key={i} className="rounded-lg border border-slate-800 p-3 text-xs space-y-1.5 bg-slate-900/60">
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="text-slate-300 font-medium">{d.location}</span>
-                          <span className={`flex-shrink-0 px-1.5 py-0.5 rounded-full font-semibold ${
-                            d.severity === 'critical' ? 'bg-red-500/10 text-red-400' : 'bg-amber-500/10 text-amber-400'
-                          }`}>
-                            {d.severity}
-                          </span>
-                        </div>
-                        <p className="text-slate-500">Approved: <span className="text-slate-400">{d.approved}</span></p>
-                        <p className="text-slate-500">Final proof: <span className="text-slate-400">{d.final}</span></p>
+                  ) : (
+                    <div className="space-y-2">
+                      <div className="flex items-start gap-2 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">
+                        <svg className="w-4 h-4 text-red-400 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126z" />
+                        </svg>
+                        <p className="text-red-400 text-xs font-semibold">{verifyResult.summary || 'Differences found between the approved artwork and the final proof.'}</p>
                       </div>
-                    ))}
-                  </div>
-                )
+                      {verifyResult.differences?.map((d, i) => (
+                        <div key={i} className="rounded-lg border border-slate-800 p-3 text-xs space-y-1.5 bg-slate-900/60">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-slate-300 font-medium">{d.location}</span>
+                            <span className={`flex-shrink-0 px-1.5 py-0.5 rounded-full font-semibold ${
+                              d.severity === 'critical' ? 'bg-red-500/10 text-red-400' : 'bg-amber-500/10 text-amber-400'
+                            }`}>
+                              {d.severity}
+                            </span>
+                          </div>
+                          <p className="text-slate-500">Approved: <span className="text-slate-400">{d.approved}</span></p>
+                          <p className="text-slate-500">Final proof: <span className="text-slate-400">{d.final}</span></p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {verifyResult.finalComplianceCheck && (
+                    <div className="space-y-2 pt-3 border-t border-slate-800/60">
+                      <div className="flex items-center justify-between flex-wrap gap-2">
+                        <p className="text-slate-300 text-xs font-semibold">Final Proof — Full Compliance Recheck</p>
+                        <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${
+                          verifyResult.finalComplianceCheck.overall_pass
+                            ? 'bg-emerald-500/10 text-emerald-400'
+                            : 'bg-red-500/10 text-red-400'
+                        }`}>
+                          {verifyResult.finalComplianceCheck.overall_pass ? 'Passes All Checks' : 'Issues Found'}
+                        </span>
+                      </div>
+                      <p className="text-slate-500 text-xs">{verifyResult.finalComplianceCheck.summary}</p>
+                      <div className="space-y-2">
+                        {['front', 'back', 'claims', 'quality'].map(g => {
+                          const items = verifyResult.finalComplianceCheck.checks?.filter(c => c.group === g) || []
+                          return items.length ? <CheckGroup key={g} group={g} checks={items} /> : null
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </div>
               )}
             </div>
           )}
