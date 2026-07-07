@@ -8,9 +8,10 @@ const STATUS_COLORS = {
 }
 const STATUS_LABELS = { pass: 'PASS', fail: 'FAIL', warning: 'WARN', not_applicable: 'N/A' }
 const GROUP_META = {
-  front:  { label: 'Front Panel',         color: [99,  102, 241] },
-  back:   { label: 'Back Panel',           color: [139,  92, 246] },
-  claims: { label: 'Claims Compliance',    color: [16,  185, 129] },
+  front:   { label: 'Front Panel',        color: [99,  102, 241] },
+  back:    { label: 'Back Panel',         color: [139,  92, 246] },
+  claims:  { label: 'Claims Compliance',  color: [16,  185, 129] },
+  quality: { label: 'Quality & Accuracy', color: [14,  165, 233] },
 }
 
 const W  = 210

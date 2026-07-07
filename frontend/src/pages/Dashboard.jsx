@@ -25,14 +25,7 @@ export default function Dashboard() {
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
   const [expandedAI, setExpandedAI] = useState(null)
-  const [lastProof, setLastProof] = useState(null)
-
-  useEffect(() => {
-    try {
-      const saved = sessionStorage.getItem('lastProof')
-      if (saved) setLastProof(JSON.parse(saved))
-    } catch {}
-  }, [])
+  const [proofJobs, setProofJobs] = useState([])
 
   const fetchOrders = useCallback(async () => {
     setLoading(true)
@@ -43,7 +36,15 @@ export default function Dashboard() {
     finally { setLoading(false) }
   }, [statusFilter])
 
+  const fetchProofJobs = useCallback(async () => {
+    try {
+      const data = await api.proofJobs.list()
+      setProofJobs(Array.isArray(data) ? data.slice(0, 5) : [])
+    } catch { setProofJobs([]) }
+  }, [])
+
   useEffect(() => { fetchOrders() }, [fetchOrders])
+  useEffect(() => { fetchProofJobs() }, [fetchProofJobs])
 
   const handleStatusChange = async (id, status) => {
     await api.orders.update(id, { status })
@@ -103,55 +104,6 @@ export default function Dashboard() {
         <SummaryCard label="Completed" value={stats.completed} sub="fulfilled" color="bg-emerald-500/10 text-emerald-400" />
       </div>
 
-      {/* Last Proof Result */}
-      {lastProof && (
-        <div className="card p-4 sm:p-5 border border-slate-700/60">
-          <p className="text-slate-500 text-xs font-semibold uppercase tracking-wide mb-3">Last Proof Result</p>
-          <div className="flex items-start gap-4">
-            {lastProof.thumbnail ? (
-              <img
-                src={lastProof.thumbnail}
-                alt="Last artwork"
-                className="w-24 h-16 object-contain rounded-lg bg-slate-900 flex-shrink-0 border border-slate-800"
-              />
-            ) : (
-              <div className="w-24 h-16 rounded-lg bg-slate-800 flex items-center justify-center flex-shrink-0">
-                <svg className="w-6 h-6 text-slate-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 001.5-1.5V6a1.5 1.5 0 00-1.5-1.5H3.75A1.5 1.5 0 002.25 6v12a1.5 1.5 0 001.5 1.5zm10.5-11.25h.008v.008h-.008V8.25zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0z" />
-                </svg>
-              </div>
-            )}
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2 flex-wrap mb-1">
-                <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${lastProof.result.overall_pass ? 'bg-emerald-500/10 text-emerald-400' : 'bg-red-500/10 text-red-400'}`}>
-                  {lastProof.result.overall_pass ? 'Approved' : 'Revisions Required'}
-                </span>
-                {lastProof.round > 1 && (
-                  <span className="text-xs bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 px-1.5 py-0.5 rounded">
-                    Round {lastProof.round}
-                  </span>
-                )}
-              </div>
-              <p className="text-slate-400 text-xs truncate mb-1">{lastProof.fileName || 'Untitled artwork'}</p>
-              <p className="text-slate-500 text-xs line-clamp-2">{lastProof.result.summary}</p>
-              <div className="flex items-center gap-3 mt-2 text-xs">
-                <span className="text-emerald-400">{lastProof.result.checks?.filter(c => c.status === 'pass').length || 0} passed</span>
-                {(lastProof.result.checks?.filter(c => c.status === 'fail').length || 0) > 0 && (
-                  <span className="text-red-400">{lastProof.result.checks.filter(c => c.status === 'fail').length} failed</span>
-                )}
-                {(lastProof.result.checks?.filter(c => c.status === 'warning').length || 0) > 0 && (
-                  <span className="text-amber-400">{lastProof.result.checks.filter(c => c.status === 'warning').length} warnings</span>
-                )}
-                <span className="text-slate-700">{new Date(lastProof.timestamp).toLocaleDateString()}</span>
-              </div>
-            </div>
-            <Link to="/proofing" className="flex-shrink-0 text-indigo-400 hover:text-indigo-300 text-xs font-medium whitespace-nowrap">
-              Proof Again →
-            </Link>
-          </div>
-        </div>
-      )}
-
       {/* Artwork Proofing */}
       <div className="card p-5 flex items-center gap-5 border border-violet-500/20 bg-violet-500/5">
         <div className="w-12 h-12 rounded-xl bg-violet-500/10 flex items-center justify-center flex-shrink-0">
@@ -173,6 +125,68 @@ export default function Dashboard() {
           Start Proofing
         </Link>
       </div>
+
+      {/* Proofing Jobs */}
+      {proofJobs.length > 0 && (
+        <div className="card overflow-hidden">
+          <div className="px-4 py-3 border-b border-slate-800 flex items-center justify-between">
+            <p className="text-slate-300 text-sm font-semibold">Recent Proofing Jobs</p>
+            <span className="text-slate-600 text-xs">{proofJobs.length} shown</span>
+          </div>
+          <div className="divide-y divide-slate-800/60">
+            {proofJobs.map(job => (
+              <div key={job.id} className="flex items-center gap-4 px-4 py-3">
+                {job.thumbnail ? (
+                  <img
+                    src={job.thumbnail}
+                    alt=""
+                    className="w-16 h-11 object-contain rounded bg-slate-900 border border-slate-800 flex-shrink-0"
+                  />
+                ) : (
+                  <div className="w-16 h-11 rounded bg-slate-800 flex-shrink-0" />
+                )}
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap mb-0.5">
+                    <p className="text-white text-sm font-medium truncate">{job.clientName}</p>
+                    <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${
+                      job.status === 'done' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-amber-500/10 text-amber-400'
+                    }`}>
+                      {job.status === 'done' ? 'Done' : 'In Progress'}
+                    </span>
+                    {job.round > 1 && (
+                      <span className="text-xs bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 px-1.5 py-0.5 rounded">
+                        Round {job.round}
+                      </span>
+                    )}
+                    {job.finalVerification && (
+                      job.finalVerification.identical ? (
+                        <span className="text-xs bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-1.5 py-0.5 rounded">
+                          ✓ Final Proof Verified
+                        </span>
+                      ) : (
+                        <span className="text-xs bg-red-500/10 text-red-400 border border-red-500/20 px-1.5 py-0.5 rounded">
+                          ⚠ Final Proof Differs
+                        </span>
+                      )
+                    )}
+                  </div>
+                  <p className="text-slate-500 text-xs truncate">
+                    By {job.ownerName || 'Unknown'} · {job.fileName || 'Untitled artwork'}
+                  </p>
+                </div>
+                <div className="flex items-center gap-3 flex-shrink-0">
+                  <span className="text-slate-700 text-xs hidden sm:inline">
+                    {job.updatedAt ? new Date(job.updatedAt).toLocaleDateString() : ''}
+                  </span>
+                  <Link to={`/proofing?job=${job.id}`} className="text-indigo-400 hover:text-indigo-300 text-xs font-medium whitespace-nowrap">
+                    {job.status === 'done' ? 'View →' : 'Resume →'}
+                  </Link>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Filters */}
       <div className="card p-4 flex flex-col sm:flex-row gap-3">

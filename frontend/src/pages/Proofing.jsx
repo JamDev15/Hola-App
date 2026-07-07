@@ -1,13 +1,15 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
+import { useSearchParams, Link } from 'react-router-dom'
 import { api } from '../api'
 import { generateCompliancePDF } from '../utils/generatePDF'
 
 // ── Metadata ─────────────────────────────────────────────────────────────────
 
 const GROUP_META = {
-  front:  { label: 'Front Panel',       color: 'text-indigo-400', bg: 'bg-indigo-500/10',  border: 'border-indigo-500/20'  },
-  back:   { label: 'Back Panel',        color: 'text-violet-400', bg: 'bg-violet-500/10',  border: 'border-violet-500/20'  },
-  claims: { label: 'Claims Compliance', color: 'text-emerald-400', bg: 'bg-emerald-500/10', border: 'border-emerald-500/20' },
+  front:   { label: 'Front Panel',       color: 'text-indigo-400', bg: 'bg-indigo-500/10',  border: 'border-indigo-500/20'  },
+  back:    { label: 'Back Panel',        color: 'text-violet-400', bg: 'bg-violet-500/10',  border: 'border-violet-500/20'  },
+  claims:  { label: 'Claims Compliance', color: 'text-emerald-400', bg: 'bg-emerald-500/10', border: 'border-emerald-500/20' },
+  quality: { label: 'Quality & Accuracy', color: 'text-sky-400',   bg: 'bg-sky-500/10',     border: 'border-sky-500/20'    },
 }
 
 const STATUS_META = {
@@ -17,11 +19,45 @@ const STATUS_META = {
   not_applicable: { label: 'N/A',     icon: '—', cls: 'bg-slate-800 text-slate-500 border-slate-700'            },
 }
 
+// Mirrors the exact checks Claude runs — see PROOF_PROMPT in app/routers/proof.py
+const CHECK_ITEMS = {
+  front: [
+    'Statement of Identity',
+    'Net Weight Statement',
+    'Flavor Name',
+    'Flavor Statement Placement',
+    'Flavor Statement Font Size',
+  ],
+  back: [
+    'Supplement Facts Panel',
+    'UPC Barcode',
+    'Suggested Use Instructions',
+    'Storage Instructions',
+    'Made For Statement',
+    'Manufactured By Statement',
+    'Origin Statement',
+    'Mandatory Manufacturing Statement',
+    'Supplement Facts Accuracy vs. Formulation',
+  ],
+  claims: [
+    'No Unapproved Medical Claims',
+    'No Unauthorized Trademarks',
+    'All Regulatory Elements Present',
+  ],
+  quality: [
+    'Spelling & Text Accuracy',
+    'Text Spacing & Layout',
+  ],
+}
+const TOTAL_CHECKS = Object.values(CHECK_ITEMS).reduce((n, arr) => n + arr.length, 0)
+
 const LOADING_STEPS = [
-  'Uploading file to Claude AI…',
+  'Uploading file to halo Private Label…',
   'Detecting panel layout…',
   'Checking front label elements…',
   'Reviewing back panel…',
+  'Cross-checking supplement facts vs. formulation…',
+  'Scanning for spelling & spacing issues…',
   'Validating claims compliance…',
   'Generating compliance report…',
 ]
@@ -82,6 +118,41 @@ function CheckGroup({ group, checks }) {
         </div>
       </div>
       <div>{checks.map(c => <CheckRow key={c.id} check={c} />)}</div>
+    </div>
+  )
+}
+
+function CheckPreviewGroup({ group }) {
+  const meta = GROUP_META[group]
+  const items = CHECK_ITEMS[group]
+  const [open, setOpen] = useState(false)
+  return (
+    <div className={`rounded-lg border ${meta.border} overflow-hidden`}>
+      <button
+        onClick={() => setOpen(o => !o)}
+        className={`w-full flex items-center justify-between gap-2 px-3 py-2.5 ${meta.bg} transition-colors`}
+      >
+        <span className="flex items-center gap-2">
+          <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${meta.color.replace('text-', 'bg-')}`} />
+          <span className={`text-xs font-semibold ${meta.color}`}>{meta.label}</span>
+          <span className="text-slate-600 text-xs">· {items.length} checks</span>
+        </span>
+        <svg className={`w-3.5 h-3.5 text-slate-500 transition-transform flex-shrink-0 ${open ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
+        </svg>
+      </button>
+      {open && (
+        <ul className="px-3 py-2 space-y-1.5 border-t border-slate-800/60">
+          {items.map(label => (
+            <li key={label} className="flex items-start gap-2 text-xs text-slate-400">
+              <svg className="w-3 h-3 text-slate-600 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+              </svg>
+              {label}
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   )
 }
@@ -364,6 +435,8 @@ function ResultsCard({ result, grouped, passCount, failCount, warnCount, round }
 // ── Main page ─────────────────────────────────────────────────────────────────
 
 export default function Proofing() {
+  const [searchParams, setSearchParams] = useSearchParams()
+
   const [sourceMode, setSourceMode] = useState('upload')
   const [panelMode,  setPanelMode]  = useState('separate')
 
@@ -384,6 +457,42 @@ export default function Proofing() {
   const [error,          setError]         = useState('')
   const [lightbox,       setLightbox]      = useState(null)
   const [analysisRound,  setAnalysisRound] = useState(0)
+
+  const [ownerName,  setOwnerName]  = useState('')
+  const [clientName, setClientName] = useState('')
+  const [jobId,       setJobId]       = useState(null)
+  const [jobStatus,   setJobStatus]   = useState(null)
+  const [resuming,    setResuming]    = useState(false)
+  const [markingDone, setMarkingDone] = useState(false)
+
+  const [finalFrontFile,    setFinalFrontFile]    = useState(null)
+  const [finalFrontPreview, setFinalFrontPreview] = useState(null)
+  const [finalBackFile,     setFinalBackFile]     = useState(null)
+  const [finalBackPreview,  setFinalBackPreview]  = useState(null)
+  const [finalCombinedFile,    setFinalCombinedFile]    = useState(null)
+  const [finalCombinedPreview, setFinalCombinedPreview] = useState(null)
+  const [verifying,    setVerifying]    = useState(false)
+  const [verifyResult, setVerifyResult] = useState(null)
+  const [verifyError,  setVerifyError]  = useState('')
+
+  // Resume an in-progress job linked from the Dashboard (?job=<id>)
+  useEffect(() => {
+    const paramId = searchParams.get('job')
+    if (!paramId) return
+    setResuming(true)
+    api.proofJobs.get(paramId)
+      .then(job => {
+        setJobId(job.id)
+        setJobStatus(job.status)
+        setOwnerName(job.ownerName || '')
+        setClientName(job.clientName || '')
+        setResult(job.result || null)
+        setAnalysisRound(job.round || 1)
+      })
+      .catch(err => setError(err.message || 'Could not load that proofing job.'))
+      .finally(() => setResuming(false))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // Cycle through loading steps while analyzing
   useEffect(() => {
@@ -417,18 +526,36 @@ export default function Proofing() {
     img.src = dataUrl
   })
 
-  const saveToSession = async (data, round) => {
+  const persistJob = async (data, round) => {
     try {
       const preview = combinedPreview || frontPreview || backPreview || null
       const thumbnail = await makeThumbnail(preview)
       const fileName = combinedFile?.name || frontFile?.name || backFile?.name || null
-      sessionStorage.setItem('lastProof', JSON.stringify({ result: data, round, fileName, thumbnail, timestamp: Date.now() }))
-    } catch {}
+      if (jobId) {
+        await api.proofJobs.update(jobId, {
+          ownerName, clientName, round, fileName, thumbnail,
+          result: data, dropboxUploads: data.dropbox_uploads,
+        })
+      } else {
+        const job = await api.proofJobs.create({
+          ownerName, clientName, round, fileName, thumbnail,
+          result: data, dropboxUploads: data.dropbox_uploads,
+        })
+        setJobId(job.id)
+        setJobStatus(job.status)
+        setSearchParams({ job: job.id }, { replace: true })
+      }
+    } catch (err) {
+      console.error('Could not save proofing job', err)
+    }
   }
 
-  const handleFrontFile    = useCallback((f) => { setFrontFile(f);    setResult(null); setError(''); readPreview(f, setFrontPreview)    }, [])
-  const handleBackFile     = useCallback((f) => { setBackFile(f);     setResult(null); setError(''); readPreview(f, setBackPreview)     }, [])
-  const handleCombinedFile = useCallback((f) => { setCombinedFile(f); setResult(null); setError(''); readPreview(f, setCombinedPreview) }, [])
+  // Note: intentionally does NOT clear `result` — resuming a saved job and re-uploading
+  // the same approved artwork (to continue a revision round or run Final Proof Verification)
+  // must keep the existing result visible. Starting over uses "Proof Another" / "New Artwork Proofing" instead.
+  const handleFrontFile    = useCallback((f) => { setFrontFile(f);    setError(''); readPreview(f, setFrontPreview)    }, [])
+  const handleBackFile     = useCallback((f) => { setBackFile(f);     setError(''); readPreview(f, setBackPreview)     }, [])
+  const handleCombinedFile = useCallback((f) => { setCombinedFile(f); setError(''); readPreview(f, setCombinedPreview) }, [])
 
   const switchMode      = (m) => { setSourceMode(m); setResult(null); setError('') }
   const switchPanelMode = (m) => { setPanelMode(m);  setResult(null); setError('') }
@@ -439,8 +566,10 @@ export default function Proofing() {
     ? (frontUrl.trim() || backUrl.trim())
     : combinedUrl.trim()
 
+  const hasJobDetails = ownerName.trim() && clientName.trim()
+
   const handleAnalyze = async () => {
-    if (!hasInput) return
+    if (!hasInput || !hasJobDetails) return
     setLoading(true); setError(''); setResult(null); setAnalysisRound(0)
     try {
       let data
@@ -455,7 +584,7 @@ export default function Proofing() {
       }
       setResult(data)
       setAnalysisRound(1)
-      saveToSession(data, 1)
+      persistJob(data, 1)
     } catch (err) {
       setError(err.message || 'Analysis failed.')
     } finally {
@@ -476,7 +605,7 @@ export default function Proofing() {
       }
       setResult(data)
       setAnalysisRound(nextRound)
-      saveToSession(data, nextRound)
+      persistJob(data, nextRound)
     } catch (err) {
       setError(err.message || 'Revision failed.')
     } finally {
@@ -484,12 +613,64 @@ export default function Proofing() {
     }
   }
 
-  const reset = () => {
+  const handleMarkDone = async () => {
+    if (!jobId) return
+    setMarkingDone(true)
+    try {
+      await api.proofJobs.update(jobId, { status: 'done' })
+      setJobStatus('done')
+    } catch (err) {
+      setError(err.message || 'Could not mark this job as done.')
+    } finally {
+      setMarkingDone(false)
+    }
+  }
+
+  const handleFinalFrontFile    = useCallback((f) => { setFinalFrontFile(f);    readPreview(f, setFinalFrontPreview);    setVerifyResult(null); setVerifyError('') }, [])
+  const handleFinalBackFile     = useCallback((f) => { setFinalBackFile(f);     readPreview(f, setFinalBackPreview);     setVerifyResult(null); setVerifyError('') }, [])
+  const handleFinalCombinedFile = useCallback((f) => { setFinalCombinedFile(f); readPreview(f, setFinalCombinedPreview); setVerifyResult(null); setVerifyError('') }, [])
+
+  const hasApprovedArtwork = !!(combinedFile || frontFile || backFile)
+  const hasFinalProofFile  = !!(finalCombinedFile || finalFrontFile || finalBackFile)
+
+  const handleVerifyFinalProof = async () => {
+    if (!hasApprovedArtwork || !hasFinalProofFile) return
+    setVerifying(true); setVerifyError(''); setVerifyResult(null)
+    try {
+      const data = await api.verifyFinalProof({
+        approvedFrontFile: frontFile, approvedBackFile: backFile, approvedCombinedFile: combinedFile,
+        finalFrontFile, finalBackFile, finalCombinedFile,
+      })
+      setVerifyResult(data)
+      if (jobId) {
+        await api.proofJobs.update(jobId, { finalVerification: data })
+      }
+    } catch (err) {
+      setVerifyError(err.message || 'Verification failed.')
+    } finally {
+      setVerifying(false)
+    }
+  }
+
+  // "Proof Another" — same owner/client, fresh artwork, new job record
+  const proofAnother = () => {
     setFrontFile(null);    setFrontPreview(null)
     setBackFile(null);     setBackPreview(null)
     setCombinedFile(null); setCombinedPreview(null)
     setFrontUrl('');       setBackUrl('');     setCombinedUrl('')
     setResult(null);       setError('');       setAnalysisRound(0)
+    setJobId(null);        setJobStatus(null)
+    setFinalFrontFile(null);    setFinalFrontPreview(null)
+    setFinalBackFile(null);     setFinalBackPreview(null)
+    setFinalCombinedFile(null); setFinalCombinedPreview(null)
+    setVerifyResult(null); setVerifyError('')
+    setSearchParams({}, { replace: true })
+  }
+
+  // "New Artwork Proofing" — full reset, including owner/client, for a different job entirely
+  const startNewProofing = () => {
+    proofAnother()
+    setOwnerName('');      setClientName('')
   }
 
   const handleExportPDF = () => {
@@ -507,7 +688,7 @@ export default function Proofing() {
   }
 
   const grouped = result?.checks
-    ? ['front', 'back', 'claims'].reduce((acc, g) => {
+    ? ['front', 'back', 'claims', 'quality'].reduce((acc, g) => {
         const items = result.checks.filter(c => c.group === g)
         if (items.length) acc[g] = items
         return acc
@@ -530,13 +711,80 @@ export default function Proofing() {
       )}
       {/* Header */}
       <div>
-        <h1 className="text-2xl font-bold text-white">Artwork Proofing</h1>
-        <p className="text-slate-400 text-sm mt-1">Upload packaging artwork or import from SharePoint to check FDA compliance and Halo Private Label requirements.</p>
+        <div className="flex items-center justify-between gap-3 mb-2 flex-wrap">
+          <Link to="/" className="inline-flex items-center gap-1.5 text-slate-500 hover:text-slate-300 text-xs font-medium transition-colors">
+            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M10.5 19.5L3 12m0 0l7.5-7.5M3 12h18" />
+            </svg>
+            Back to Dashboard
+          </Link>
+          {(ownerName || clientName || jobId || result) && (
+            <button
+              onClick={startNewProofing}
+              className="inline-flex items-center gap-1.5 text-indigo-400 hover:text-indigo-300 text-xs font-medium transition-colors"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+              </svg>
+              New Artwork Proofing
+            </button>
+          )}
+        </div>
+        <div className="flex items-center gap-3 flex-wrap">
+          <h1 className="text-2xl font-bold text-white">Artwork Proofing</h1>
+          <span className="inline-flex items-center gap-1.5 text-xs font-medium text-indigo-300 bg-indigo-500/10 border border-indigo-500/20 px-2.5 py-1 rounded-full">
+            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z" />
+            </svg>
+            Powered by halo Private Label
+          </span>
+          {jobStatus && (
+            <span className={`inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full ${
+              jobStatus === 'done' ? 'text-emerald-400 bg-emerald-500/10 border border-emerald-500/20' : 'text-amber-400 bg-amber-500/10 border border-amber-500/20'
+            }`}>
+              {jobStatus === 'done' ? 'Done' : 'In Progress'}
+            </span>
+          )}
+        </div>
+        <p className="text-slate-400 text-sm mt-1.5">
+          Upload packaging artwork or import from SharePoint to run {TOTAL_CHECKS} automated checks against FDA compliance and halo Private Label requirements.
+        </p>
       </div>
 
       <div className="grid lg:grid-cols-2 gap-6 items-start">
         {/* ── Left column: upload controls ── */}
         <div className="space-y-4">
+
+          {/* Job details */}
+          <div className="card p-4 sm:p-5 space-y-3">
+            <div className="flex items-center justify-between">
+              <p className="text-slate-300 text-sm font-semibold">Job Details</p>
+              {resuming && <span className="text-slate-500 text-xs">Loading saved job…</span>}
+            </div>
+            <div className="grid sm:grid-cols-2 gap-3">
+              <div>
+                <label className="text-slate-500 text-xs">Your Name (Owner)</label>
+                <input
+                  type="text" value={ownerName} onChange={e => setOwnerName(e.target.value)}
+                  placeholder="e.g. Jamilah"
+                  disabled={jobStatus === 'done'}
+                  className="input mt-1 text-sm w-full disabled:opacity-60"
+                />
+              </div>
+              <div>
+                <label className="text-slate-500 text-xs">Client Name</label>
+                <input
+                  type="text" value={clientName} onChange={e => setClientName(e.target.value)}
+                  placeholder="e.g. Apex Wellness Brands"
+                  disabled={jobStatus === 'done'}
+                  className="input mt-1 text-sm w-full disabled:opacity-60"
+                />
+              </div>
+            </div>
+            {jobId && (
+              <p className="text-slate-600 text-xs">This job is saved and visible on the Dashboard — you can leave and come back to it anytime.</p>
+            )}
+          </div>
 
           {/* Source mode toggle */}
           <div className="card p-1 flex gap-1">
@@ -648,29 +896,34 @@ export default function Proofing() {
           )}
 
           {hasInput && !result && (
-            <button onClick={handleAnalyze} disabled={loading} className="btn-primary w-full justify-center">
-              {loading ? (
-                <>
-                  <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                  </svg>
-                  Analyzing with Claude AI…
-                </>
-              ) : (
-                <>
-                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z" />
-                  </svg>
-                  Run Compliance Check {panelLabel}
-                </>
+            <>
+              {!hasJobDetails && (
+                <p className="text-amber-400 text-xs">Enter your name and the client name above before running the check.</p>
               )}
-            </button>
+              <button onClick={handleAnalyze} disabled={loading || !hasJobDetails} className="btn-primary w-full justify-center disabled:opacity-50 disabled:cursor-not-allowed">
+                {loading ? (
+                  <>
+                    <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                    </svg>
+                    Analyzing with halo Private Label…
+                  </>
+                ) : (
+                  <>
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z" />
+                    </svg>
+                    Run Compliance Check {panelLabel}
+                  </>
+                )}
+              </button>
+            </>
           )}
 
           {result && (
             <div className="flex gap-2">
-              <button onClick={reset} className="btn-secondary flex-1 justify-center text-sm">Proof Another</button>
+              <button onClick={proofAnother} className="btn-secondary flex-1 justify-center text-sm">Proof Another</button>
               <button
                 onClick={handleExportPDF}
                 className="btn-secondary flex items-center gap-2 px-4 text-sm text-emerald-400 border-emerald-500/20 hover:bg-emerald-500/10"
@@ -683,40 +936,176 @@ export default function Proofing() {
             </div>
           )}
 
-          {/* ── Revision button ── */}
-          {result && !loading && analysisRound > 0 && analysisRound < 3 && sourceMode === 'upload' && (
-            <div className="card p-4 border border-indigo-500/20 bg-indigo-500/5 space-y-3">
-              <div className="flex items-center gap-2">
-                {[1, 2, 3].map(r => (
-                  <div key={r} className={`w-2 h-2 rounded-full transition-colors ${r <= analysisRound ? 'bg-indigo-400' : 'bg-slate-700'}`} />
-                ))}
-                <span className="text-slate-500 text-xs ml-1">Round {analysisRound} of 3</span>
-              </div>
-              <div className="flex items-start gap-3">
-                <div className="flex-1">
-                  <p className="text-indigo-300 text-sm font-semibold">
-                    {warnCount > 0 ? `${warnCount} warning${warnCount > 1 ? 's' : ''} — refine for certainty` : 'Run deeper expert review'}
-                  </p>
-                  <p className="text-slate-500 text-xs mt-0.5">
-                    AI re-examines as a senior artwork expert, resolving all uncertainty
-                  </p>
-                </div>
-                <button onClick={handleRevise} disabled={loading} className="btn-primary text-sm whitespace-nowrap flex-shrink-0">
-                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
-                  </svg>
-                  {analysisRound === 1 ? 'Expert Revision' : 'Final Check'}
-                </button>
-              </div>
-            </div>
+          {result && jobId && jobStatus !== 'done' && (
+            <button
+              onClick={handleMarkDone}
+              disabled={markingDone}
+              className="btn-secondary w-full justify-center text-sm text-emerald-400 border-emerald-500/20 hover:bg-emerald-500/10 disabled:opacity-50"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              {markingDone ? 'Marking as Done…' : 'Mark Final Proofing as Done'}
+            </button>
           )}
 
-          {result && !loading && analysisRound === 3 && (
+          {/* ── Revision button ── */}
+          {result && !loading && jobStatus !== 'done' && analysisRound > 0 && analysisRound < 3 && sourceMode === 'upload' && (
+            hasInput ? (
+              <div className="card p-4 border border-indigo-500/20 bg-indigo-500/5 space-y-3">
+                <div className="flex items-center gap-2">
+                  {[1, 2, 3].map(r => (
+                    <div key={r} className={`w-2 h-2 rounded-full transition-colors ${r <= analysisRound ? 'bg-indigo-400' : 'bg-slate-700'}`} />
+                  ))}
+                  <span className="text-slate-500 text-xs ml-1">Round {analysisRound} of 3</span>
+                </div>
+                <div className="flex items-start gap-3">
+                  <div className="flex-1">
+                    <p className="text-indigo-300 text-sm font-semibold">
+                      {warnCount > 0 ? `${warnCount} warning${warnCount > 1 ? 's' : ''} — refine for certainty` : 'Run deeper expert review'}
+                    </p>
+                    <p className="text-slate-500 text-xs mt-0.5">
+                      AI re-examines as a senior artwork expert, resolving all uncertainty
+                    </p>
+                  </div>
+                  <button onClick={handleRevise} disabled={loading} className="btn-primary text-sm whitespace-nowrap flex-shrink-0">
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
+                    </svg>
+                    {analysisRound === 1 ? 'Expert Revision' : 'Final Check'}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="card p-3 border border-slate-700/60 text-xs text-slate-500">
+                This job is still in progress (Round {analysisRound} of 3). Re-upload the same artwork above to continue with another revision round, or mark it as done above.
+              </div>
+            )
+          )}
+
+          {jobStatus === 'done' ? (
+            <div className="card px-4 py-3 flex items-center gap-2 border border-emerald-500/20 bg-emerald-500/5">
+              <svg className="w-4 h-4 text-emerald-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <p className="text-emerald-400 text-xs font-semibold">Marked as done — visible on the Dashboard</p>
+            </div>
+          ) : result && !loading && analysisRound === 3 && (
             <div className="card px-4 py-3 flex items-center gap-2 border border-emerald-500/20 bg-emerald-500/5">
               <svg className="w-4 h-4 text-emerald-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
               <p className="text-emerald-400 text-xs font-semibold">Final expert analysis complete — all 3 rounds done</p>
+            </div>
+          )}
+
+          {/* ── Final Proof Verification ── */}
+          {result && !loading && (
+            <div className="card p-4 sm:p-5 space-y-3 border border-amber-500/20 bg-amber-500/5">
+              <div className="flex items-center gap-2">
+                <svg className="w-4 h-4 text-amber-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <p className="text-amber-300 text-sm font-semibold">Final Proof Verification</p>
+              </div>
+              <p className="text-slate-500 text-xs">
+                Before sending to the manufacturer, upload the exact final print-ready file here to confirm it matches the approved artwork above with zero changes.
+              </p>
+
+              {!hasApprovedArtwork ? (
+                <p className="text-amber-400 text-xs">Re-upload the approved artwork above first, so it can be compared against.</p>
+              ) : panelMode === 'combined' ? (
+                <PanelUploadZone
+                  label="Final Proof (Combined)"
+                  hint="The exact file about to go to the manufacturer — drag or click"
+                  dotColor="bg-amber-400" accentBorder="border-amber-500" accentBg="bg-amber-500/5"
+                  file={finalCombinedFile} preview={finalCombinedPreview}
+                  onFile={handleFinalCombinedFile}
+                  onRemove={() => { setFinalCombinedFile(null); setFinalCombinedPreview(null); setVerifyResult(null) }}
+                  onExpand={(src, name) => setLightbox({ src, name })}
+                />
+              ) : (
+                <>
+                  {frontFile && (
+                    <PanelUploadZone
+                      label="Final Proof — Front Panel"
+                      dotColor="bg-amber-400" accentBorder="border-amber-500" accentBg="bg-amber-500/5"
+                      file={finalFrontFile} preview={finalFrontPreview}
+                      onFile={handleFinalFrontFile}
+                      onRemove={() => { setFinalFrontFile(null); setFinalFrontPreview(null); setVerifyResult(null) }}
+                      onExpand={(src, name) => setLightbox({ src, name })}
+                    />
+                  )}
+                  {backFile && (
+                    <PanelUploadZone
+                      label="Final Proof — Back Panel"
+                      dotColor="bg-amber-400" accentBorder="border-amber-500" accentBg="bg-amber-500/5"
+                      file={finalBackFile} preview={finalBackPreview}
+                      onFile={handleFinalBackFile}
+                      onRemove={() => { setFinalBackFile(null); setFinalBackPreview(null); setVerifyResult(null) }}
+                      onExpand={(src, name) => setLightbox({ src, name })}
+                    />
+                  )}
+                </>
+              )}
+
+              {hasApprovedArtwork && hasFinalProofFile && (
+                <button
+                  onClick={handleVerifyFinalProof}
+                  disabled={verifying}
+                  className="btn-primary w-full justify-center disabled:opacity-50"
+                >
+                  {verifying ? (
+                    <>
+                      <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                      </svg>
+                      Comparing to approved artwork…
+                    </>
+                  ) : 'Verify No Changes'}
+                </button>
+              )}
+
+              {verifyError && (
+                <div className="bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2 text-red-400 text-xs break-words">{verifyError}</div>
+              )}
+
+              {verifyResult && (
+                verifyResult.identical ? (
+                  <div className="flex items-center gap-2 bg-emerald-500/10 border border-emerald-500/20 rounded-lg px-3 py-2">
+                    <svg className="w-4 h-4 text-emerald-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    <p className="text-emerald-400 text-xs font-semibold">
+                      {verifyResult.summary || 'Final proof matches the approved artwork exactly — safe to send to production.'}
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    <div className="flex items-start gap-2 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">
+                      <svg className="w-4 h-4 text-red-400 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126z" />
+                      </svg>
+                      <p className="text-red-400 text-xs font-semibold">{verifyResult.summary || 'Differences found between the approved artwork and the final proof.'}</p>
+                    </div>
+                    {verifyResult.differences?.map((d, i) => (
+                      <div key={i} className="rounded-lg border border-slate-800 p-3 text-xs space-y-1.5 bg-slate-900/60">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-slate-300 font-medium">{d.location}</span>
+                          <span className={`flex-shrink-0 px-1.5 py-0.5 rounded-full font-semibold ${
+                            d.severity === 'critical' ? 'bg-red-500/10 text-red-400' : 'bg-amber-500/10 text-amber-400'
+                          }`}>
+                            {d.severity}
+                          </span>
+                        </div>
+                        <p className="text-slate-500">Approved: <span className="text-slate-400">{d.approved}</span></p>
+                        <p className="text-slate-500">Final proof: <span className="text-slate-400">{d.final}</span></p>
+                      </div>
+                    ))}
+                  </div>
+                )
+              )}
             </div>
           )}
 
@@ -736,20 +1125,13 @@ export default function Proofing() {
 
           {/* What gets checked */}
           <div className="card p-4 space-y-3">
-            <h3 className="text-slate-300 text-sm font-semibold">What gets checked</h3>
-            {Object.entries(GROUP_META).map(([g, m]) => (
-              <div key={g} className="flex items-start gap-2">
-                <span className={`w-2 h-2 rounded-full mt-1 flex-shrink-0 ${m.color.replace('text-', 'bg-')}`} />
-                <div>
-                  <span className={`text-xs font-medium ${m.color}`}>{m.label}</span>
-                  <span className="text-slate-600 text-xs ml-2">
-                    {g === 'front'  && '— Identity, weight, flavor name & statement'}
-                    {g === 'back'   && '— SFP, UPC, directions, Manufactured By, origin'}
-                    {g === 'claims' && '— No medical claims, no unauthorized trademarks'}
-                  </span>
-                </div>
-              </div>
-            ))}
+            <div className="flex items-center justify-between">
+              <h3 className="text-slate-300 text-sm font-semibold">What gets checked</h3>
+              <span className="text-slate-600 text-xs">{TOTAL_CHECKS} checks · {Object.keys(GROUP_META).length} categories</span>
+            </div>
+            <div className="space-y-2">
+              {Object.keys(GROUP_META).map(g => <CheckPreviewGroup key={g} group={g} />)}
+            </div>
           </div>
         </div>
 
@@ -764,11 +1146,24 @@ export default function Proofing() {
             />
           )}
           {!result && !loading && (
-            <div className="card p-10 flex flex-col items-center gap-3 text-center text-slate-500">
-              <svg className="w-10 h-10 opacity-30" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z" />
-              </svg>
-              <p className="text-sm">Upload artwork or paste a SharePoint link to see compliance results</p>
+            <div className="card p-8 sm:p-10 flex flex-col items-center gap-5 text-center">
+              <div className="w-16 h-16 rounded-2xl bg-indigo-600/10 border border-indigo-500/20 flex items-center justify-center">
+                <svg className="w-8 h-8 text-indigo-400/70" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z" />
+                </svg>
+              </div>
+              <div>
+                <p className="text-slate-300 text-sm font-medium">Ready to run a compliance check</p>
+                <p className="text-slate-500 text-xs mt-1">Upload artwork or paste a SharePoint link — results appear here</p>
+              </div>
+              <div className="w-full grid grid-cols-2 gap-2">
+                {Object.entries(GROUP_META).map(([g, m]) => (
+                  <div key={g} className={`rounded-lg border ${m.border} ${m.bg} px-3 py-2 text-left`}>
+                    <p className={`text-xs font-semibold ${m.color}`}>{CHECK_ITEMS[g].length} {CHECK_ITEMS[g].length === 1 ? 'check' : 'checks'}</p>
+                    <p className="text-slate-500 text-[11px] mt-0.5">{m.label}</p>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
         </div>

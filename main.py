@@ -4,7 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
 from app.database import init_db
-from app.routers import orders, copackers, formulas, seed, proof, sharepoint
+from app.routers import orders, copackers, formulas, seed, proof, proof_jobs, sharepoint
 
 
 @asynccontextmanager
@@ -28,4 +28,5 @@ app.include_router(copackers.router, prefix="/api/co-packers", tags=["co-packers
 app.include_router(formulas.router, prefix="/api/formulas", tags=["formulas"])
 app.include_router(seed.router, prefix="/api/seed", tags=["seed"])
 app.include_router(proof.router, prefix="/api/proof", tags=["proof"])
+app.include_router(proof_jobs.router, prefix="/api/proof-jobs", tags=["proof-jobs"])
 app.include_router(sharepoint.router, prefix="/api/sharepoint", tags=["sharepoint"])

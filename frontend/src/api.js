@@ -34,6 +34,13 @@ export const api = {
     delete: (id) => req(`/formulas/${id}`, { method: 'DELETE' }),
   },
   seed: () => req('/seed', { method: 'POST' }),
+  proofJobs: {
+    list: (params = {}) => req('/proof-jobs?' + new URLSearchParams(params)),
+    get: (id) => req(`/proof-jobs/${id}`),
+    create: (body) => req('/proof-jobs', { method: 'POST', body: JSON.stringify(body) }),
+    update: (id, body) => req(`/proof-jobs/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
+    delete: (id) => req(`/proof-jobs/${id}`, { method: 'DELETE' }),
+  },
   proof: async ({ frontFile, backFile, combinedFile }) => {
     const form = new FormData()
     if (combinedFile) form.append('combined_file', combinedFile)
@@ -69,4 +76,22 @@ export const api = {
         combined_url: combinedUrl || '',
       }),
     }),
+  verifyFinalProof: async ({
+    approvedFrontFile, approvedBackFile, approvedCombinedFile,
+    finalFrontFile, finalBackFile, finalCombinedFile,
+  }) => {
+    const form = new FormData()
+    if (approvedCombinedFile) form.append('approved_combined_file', approvedCombinedFile)
+    if (approvedFrontFile)    form.append('approved_front_file', approvedFrontFile)
+    if (approvedBackFile)     form.append('approved_back_file', approvedBackFile)
+    if (finalCombinedFile)    form.append('final_combined_file', finalCombinedFile)
+    if (finalFrontFile)       form.append('final_front_file', finalFrontFile)
+    if (finalBackFile)        form.append('final_back_file', finalBackFile)
+    const res = await fetch(`${DIRECT_BASE}/proof/verify`, { method: 'POST', body: form })
+    const text = await res.text()
+    let data
+    try { data = JSON.parse(text) } catch { throw new Error(text || 'Verification failed') }
+    if (!res.ok) throw new Error(data.detail || 'Verification failed')
+    return data
+  },
 }
