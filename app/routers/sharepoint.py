@@ -32,7 +32,24 @@ async def _get_graph_token() -> str:
         return r.json()["access_token"]
 
 
-async def _fetch_rendered_thumbnail(client: httpx.AsyncClient, token: str, item: dict) -> bytes | None:
+_IMAGE_MAGIC = (
+    (b"\x89PNG\r\n\x1a\n", "image/png"),
+    (b"\xff\xd8\xff", "image/jpeg"),
+    (b"GIF87a", "image/gif"),
+    (b"GIF89a", "image/gif"),
+)
+
+
+def _sniff_image_mime(data: bytes) -> str | None:
+    for magic, mime in _IMAGE_MAGIC:
+        if data.startswith(magic):
+            return mime
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "image/webp"
+    return None
+
+
+async def _fetch_rendered_thumbnail(client: httpx.AsyncClient, token: str, item: dict) -> tuple[bytes, str] | None:
     """Fall back to Microsoft's own server-side rendered preview (same one SharePoint shows in
     the file browser) for files where the raw package has no extractable static image — e.g. a
     live-rendered embedded object (Illustrator, etc.) that only Office's cloud service can display."""
@@ -44,8 +61,12 @@ async def _fetch_rendered_thumbnail(client: httpx.AsyncClient, token: str, item:
         entry = sizes.get(size)
         if entry and entry.get("url"):
             resp = await client.get(entry["url"], headers={"Authorization": f"Bearer {token}"})
-            if resp.is_success:
-                return resp.content
+            if not resp.is_success:
+                continue
+            content_type = resp.headers.get("content-type", "").split(";")[0].strip().lower()
+            if content_type not in ("image/jpeg", "image/png", "image/gif", "image/webp"):
+                content_type = _sniff_image_mime(resp.content) or "image/jpeg"
+            return resp.content, content_type
     return None
 
 
@@ -92,7 +113,8 @@ async def fetch_file(sharing_url: str) -> tuple[bytes, str, str]:
 
             thumbnail = await _fetch_rendered_thumbnail(client, token, item)
             if thumbnail:
-                return thumbnail, "image/jpeg", file_name
+                thumbnail_bytes, thumbnail_mime = thumbnail
+                return thumbnail_bytes, thumbnail_mime, file_name
 
             raise HTTPException(
                 400,
