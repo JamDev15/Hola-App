@@ -32,6 +32,23 @@ async def _get_graph_token() -> str:
         return r.json()["access_token"]
 
 
+async def _fetch_rendered_thumbnail(client: httpx.AsyncClient, token: str, item: dict) -> bytes | None:
+    """Fall back to Microsoft's own server-side rendered preview (same one SharePoint shows in
+    the file browser) for files where the raw package has no extractable static image — e.g. a
+    live-rendered embedded object (Illustrator, etc.) that only Office's cloud service can display."""
+    thumbnail_sets = item.get("thumbnails") or []
+    if not thumbnail_sets:
+        return None
+    sizes = thumbnail_sets[0]
+    for size in ("large", "medium", "small"):
+        entry = sizes.get(size)
+        if entry and entry.get("url"):
+            resp = await client.get(entry["url"], headers={"Authorization": f"Bearer {token}"})
+            if resp.is_success:
+                return resp.content
+    return None
+
+
 async def fetch_file(sharing_url: str) -> tuple[bytes, str, str]:
     """Resolve a SharePoint sharing URL and return (content_bytes, mime_type, filename)."""
     token = await _get_graph_token()
@@ -42,7 +59,7 @@ async def fetch_file(sharing_url: str) -> tuple[bytes, str, str]:
 
     async with httpx.AsyncClient(timeout=30) as client:
         r = await client.get(
-            f"https://graph.microsoft.com/v1.0/shares/{graph_id}/driveItem",
+            f"https://graph.microsoft.com/v1.0/shares/{graph_id}/driveItem?$expand=thumbnails",
             headers={"Authorization": f"Bearer {token}"},
         )
         if not r.is_success:
@@ -72,6 +89,11 @@ async def fetch_file(sharing_url: str) -> tuple[bytes, str, str]:
             if extracted:
                 image_bytes, image_mime = extracted
                 return image_bytes, image_mime, file_name
+
+            thumbnail = await _fetch_rendered_thumbnail(client, token, item)
+            if thumbnail:
+                return thumbnail, "image/jpeg", file_name
+
             raise HTTPException(
                 400,
                 f"'{file_name}' is a Word document with no usable embedded image — {describe_docx_media(data)}. "
