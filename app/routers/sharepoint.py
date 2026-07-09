@@ -2,7 +2,7 @@ import base64
 import httpx
 from fastapi import APIRouter, HTTPException
 from app.config import settings
-from app.docx_utils import DOCX_MIME, describe_docx_media, extract_docx_image
+from app.docx_utils import DOCX_MIME, describe_docx_media, extract_docx_image, verified_image_mime
 
 router = APIRouter()
 
@@ -32,23 +32,6 @@ async def _get_graph_token() -> str:
         return r.json()["access_token"]
 
 
-_IMAGE_MAGIC = (
-    (b"\x89PNG\r\n\x1a\n", "image/png"),
-    (b"\xff\xd8\xff", "image/jpeg"),
-    (b"GIF87a", "image/gif"),
-    (b"GIF89a", "image/gif"),
-)
-
-
-def _sniff_image_mime(data: bytes) -> str | None:
-    for magic, mime in _IMAGE_MAGIC:
-        if data.startswith(magic):
-            return mime
-    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
-        return "image/webp"
-    return None
-
-
 async def _fetch_rendered_thumbnail(client: httpx.AsyncClient, token: str, item: dict) -> tuple[bytes, str] | None:
     """Fall back to Microsoft's own server-side rendered preview (same one SharePoint shows in
     the file browser) for files where the raw package has no extractable static image — e.g. a
@@ -63,10 +46,7 @@ async def _fetch_rendered_thumbnail(client: httpx.AsyncClient, token: str, item:
             resp = await client.get(entry["url"], headers={"Authorization": f"Bearer {token}"})
             if not resp.is_success:
                 continue
-            content_type = resp.headers.get("content-type", "").split(";")[0].strip().lower()
-            if content_type not in ("image/jpeg", "image/png", "image/gif", "image/webp"):
-                content_type = _sniff_image_mime(resp.content) or "image/jpeg"
-            return resp.content, content_type
+            return resp.content, verified_image_mime(resp.content, "image/jpeg")
     return None
 
 
@@ -102,8 +82,11 @@ async def fetch_file(sharing_url: str) -> tuple[bytes, str, str]:
         file_r.raise_for_status()
         data = file_r.content
 
-        if mime_type.startswith("image/") or mime_type == "application/pdf":
+        if mime_type == "application/pdf":
             return data, mime_type, file_name
+
+        if mime_type.startswith("image/"):
+            return data, verified_image_mime(data, mime_type), file_name
 
         if mime_type == DOCX_MIME or file_name.lower().endswith(".docx"):
             extracted = extract_docx_image(data)

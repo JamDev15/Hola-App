@@ -11,6 +11,30 @@ _IMAGE_EXT_MIME = {
     "gif": "image/gif",
 }
 
+_IMAGE_MAGIC = (
+    (b"\x89PNG\r\n\x1a\n", "image/png"),
+    (b"\xff\xd8\xff", "image/jpeg"),
+    (b"GIF87a", "image/gif"),
+    (b"GIF89a", "image/gif"),
+)
+
+
+def sniff_image_mime(data: bytes) -> Optional[str]:
+    for magic, mime in _IMAGE_MAGIC:
+        if data.startswith(magic):
+            return mime
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "image/webp"
+    return None
+
+
+def verified_image_mime(data: bytes, claimed_mime: str) -> str:
+    """Never trust a self-reported/inferred mime type for image bytes — Claude's API hard-rejects
+    any mismatch between the declared media type and the actual file signature. Both Graph API
+    metadata and file extensions inside a .docx have been observed mislabeling PNGs as JPEG."""
+    sniffed = sniff_image_mime(data)
+    return sniffed if sniffed else claimed_mime
+
 
 def extract_docx_image(data: bytes) -> Optional[tuple[bytes, str]]:
     """Pull the largest embedded image out of a .docx file (a .docx is a zip archive).
@@ -30,7 +54,8 @@ def extract_docx_image(data: bytes) -> Optional[tuple[bytes, str]]:
             if not candidates:
                 return None
             best_info, best_ext = max(candidates, key=lambda c: c[0].file_size)
-            return z.read(best_info.filename), _IMAGE_EXT_MIME[best_ext]
+            image_bytes = z.read(best_info.filename)
+            return image_bytes, verified_image_mime(image_bytes, _IMAGE_EXT_MIME[best_ext])
     except zipfile.BadZipFile:
         return None
 
