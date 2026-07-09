@@ -7,7 +7,7 @@ from pydantic import BaseModel
 from fastapi import APIRouter, UploadFile, File, HTTPException, Form
 from app.config import settings
 from app import dropbox as dropbox_util
-from app.docx_utils import DOCX_MIME, extract_docx_image
+from app.docx_utils import DOCX_MIME, describe_docx_media, extract_docx_image
 
 router = APIRouter()
 
@@ -257,7 +257,7 @@ async def _read_panel(upload: UploadFile, label: str) -> tuple[bytes, str]:
     if upload.content_type == DOCX_MIME:
         extracted = extract_docx_image(data)
         if not extracted:
-            raise HTTPException(400, f"{label}: no embedded image found in this Word document. Insert the artwork as a picture in the doc, or export it as a JPEG/PNG/PDF instead.")
+            raise HTTPException(400, f"{label}: no usable embedded image — {describe_docx_media(data)}. Export the artwork as a JPEG/PNG/PDF instead.")
         return extracted
 
     return data, upload.content_type

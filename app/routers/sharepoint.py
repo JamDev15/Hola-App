@@ -2,7 +2,7 @@ import base64
 import httpx
 from fastapi import APIRouter, HTTPException
 from app.config import settings
-from app.docx_utils import DOCX_MIME, extract_docx_image
+from app.docx_utils import DOCX_MIME, describe_docx_media, extract_docx_image
 
 router = APIRouter()
 
@@ -74,9 +74,8 @@ async def fetch_file(sharing_url: str) -> tuple[bytes, str, str]:
                 return image_bytes, image_mime, file_name
             raise HTTPException(
                 400,
-                f"'{file_name}' is a Word document with no embedded image found. "
-                "Insert/paste the artwork as a picture inside the doc, or export it as a "
-                "JPEG/PNG/PDF and share that file instead.",
+                f"'{file_name}' is a Word document with no usable embedded image — {describe_docx_media(data)}. "
+                "Export the artwork as a JPEG/PNG/PDF and share that file instead.",
             )
 
         raise HTTPException(

@@ -33,3 +33,27 @@ def extract_docx_image(data: bytes) -> Optional[tuple[bytes, str]]:
             return z.read(best_info.filename), _IMAGE_EXT_MIME[best_ext]
     except zipfile.BadZipFile:
         return None
+
+
+def describe_docx_media(data: bytes) -> str:
+    """Diagnostic summary of what's embedded in word/media/, for error messages when extraction fails."""
+    try:
+        with zipfile.ZipFile(io.BytesIO(data)) as z:
+            names = sorted(
+                info.filename.rsplit("/", 1)[-1]
+                for info in z.infolist()
+                if info.filename.startswith("word/media/")
+            )
+    except zipfile.BadZipFile:
+        return "the file could not be read as a Word document (it may be corrupted or not a real .docx)"
+
+    if not names:
+        return (
+            "no embedded media was found at all — the artwork may be linked rather than "
+            "embedded, or inserted as an object without a raster preview"
+        )
+    return (
+        f"found embedded file(s) {', '.join(names)}, but none are a supported raster image "
+        "(PNG/JPG/GIF) — likely a vector preview (EMF/WMF) of an embedded object like an "
+        "Illustrator file, which can't be read directly"
+    )
