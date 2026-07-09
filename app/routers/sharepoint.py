@@ -2,6 +2,7 @@ import base64
 import httpx
 from fastapi import APIRouter, HTTPException
 from app.config import settings
+from app.docx_utils import DOCX_MIME, extract_docx_image
 
 router = APIRouter()
 
@@ -55,17 +56,31 @@ async def fetch_file(sharing_url: str) -> tuple[bytes, str, str]:
         file_name = item.get("name", "artwork")
         mime_type = item.get("file", {}).get("mimeType", "image/jpeg")
 
-        if not mime_type.startswith("image/"):
-            raise HTTPException(
-                400,
-                f"'{file_name}' is not an image. Please share a JPEG, PNG, or WEBP file.",
-            )
-
         download_url = item.get("@microsoft.graph.downloadUrl")
         if not download_url:
             raise HTTPException(400, "Could not get a download URL from SharePoint.")
 
         file_r = await client.get(download_url, follow_redirects=True)
         file_r.raise_for_status()
+        data = file_r.content
 
-        return file_r.content, mime_type, file_name
+        if mime_type.startswith("image/") or mime_type == "application/pdf":
+            return data, mime_type, file_name
+
+        if mime_type == DOCX_MIME or file_name.lower().endswith(".docx"):
+            extracted = extract_docx_image(data)
+            if extracted:
+                image_bytes, image_mime = extracted
+                return image_bytes, image_mime, file_name
+            raise HTTPException(
+                400,
+                f"'{file_name}' is a Word document with no embedded image found. "
+                "Insert/paste the artwork as a picture inside the doc, or export it as a "
+                "JPEG/PNG/PDF and share that file instead.",
+            )
+
+        raise HTTPException(
+            400,
+            f"'{file_name}' is not a supported file type. Please share a JPEG, PNG, WEBP, PDF, "
+            "or a Word document containing the artwork as an embedded image.",
+        )

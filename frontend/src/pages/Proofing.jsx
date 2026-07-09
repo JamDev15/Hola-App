@@ -159,7 +159,8 @@ function CheckPreviewGroup({ group }) {
 
 // ── Upload zone ───────────────────────────────────────────────────────────────
 
-const ACCEPT = 'image/jpeg,image/png,image/webp,image/gif,application/pdf,.pdf'
+const DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+const ACCEPT = `image/jpeg,image/png,image/webp,image/gif,application/pdf,.pdf,${DOCX_MIME},.docx`
 
 function ImageLightbox({ src, name, onClose }) {
   useEffect(() => {
@@ -197,17 +198,20 @@ function ImageLightbox({ src, name, onClose }) {
 
 function FilePreview({ file, preview, onExpand }) {
   if (!file) return null
-  if (file.type === 'application/pdf') {
+  if (file.type === 'application/pdf' || file.type === DOCX_MIME) {
+    const isDocx = file.type === DOCX_MIME
     return (
       <div className="card flex items-center gap-3 px-4 py-3">
-        <div className="w-9 h-9 rounded-lg bg-red-500/10 flex items-center justify-center flex-shrink-0">
-          <svg className="w-5 h-5 text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+        <div className={`w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 ${isDocx ? 'bg-blue-500/10' : 'bg-red-500/10'}`}>
+          <svg className={`w-5 h-5 ${isDocx ? 'text-blue-400' : 'text-red-400'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
           </svg>
         </div>
         <div className="min-w-0">
           <p className="text-slate-200 text-sm font-medium truncate">{file.name}</p>
-          <p className="text-slate-500 text-xs">PDF document · {(file.size / 1024).toFixed(0)} KB</p>
+          <p className="text-slate-500 text-xs">
+            {isDocx ? 'Word document — embedded image will be extracted' : 'PDF document'} · {(file.size / 1024).toFixed(0)} KB
+          </p>
         </div>
       </div>
     )
@@ -237,7 +241,7 @@ function PanelUploadZone({ label, hint, accentBorder, accentBg, dotColor, file, 
 
   const handleFile = useCallback((f) => {
     if (!f) return
-    const ok = f.type.startsWith('image/') || f.type === 'application/pdf'
+    const ok = f.type.startsWith('image/') || f.type === 'application/pdf' || f.type === DOCX_MIME
     if (ok) onFile(f)
   }, [onFile])
 
@@ -272,7 +276,7 @@ function PanelUploadZone({ label, hint, accentBorder, accentBg, dotColor, file, 
           </div>
           <div className="text-center">
             <p className="text-slate-300 text-sm font-medium">{label}</p>
-            <p className="text-slate-500 text-xs mt-0.5">{hint || 'JPEG, PNG, WEBP or PDF — drag or click'}</p>
+            <p className="text-slate-500 text-xs mt-0.5">{hint || 'JPEG, PNG, WEBP, PDF, or Word doc — drag or click'}</p>
           </div>
           <input ref={inputRef} type="file" accept={ACCEPT} className="hidden" onChange={e => handleFile(e.target.files[0])} />
         </div>
@@ -891,7 +895,7 @@ export default function Proofing() {
             ) : (
               <>
                 <div className="bg-indigo-500/5 border border-indigo-500/20 rounded-lg px-3 py-2 text-xs text-indigo-300">
-                  Paste SharePoint sharing link(s). Files must be shared or your Azure app must have access.
+                  Paste SharePoint sharing link(s) to a JPEG/PNG/PDF, or a Word doc with the artwork embedded as a picture. Files must be shared or your Azure app must have access.
                 </div>
                 {panelMode === 'separate' ? (
                   <>
