@@ -193,7 +193,7 @@ async def _call_claude_json(content: list) -> dict:
         client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
         response = await client.messages.create(
             model=settings.anthropic_model,
-            max_tokens=4096,
+            max_tokens=8192,
             messages=[{"role": "user", "content": content}],
         )
         text = response.content[0].text if response.content else ""
@@ -203,9 +203,18 @@ async def _call_claude_json(content: list) -> dict:
     try:
         start = text.find("{")
         end = text.rfind("}") + 1
-        return json.loads(text[start:end]) if start >= 0 and end > start else {}
+        result = json.loads(text[start:end]) if start >= 0 and end > start else {}
     except Exception:
-        return {}
+        result = {}
+
+    if not result and response.stop_reason == "max_tokens":
+        raise HTTPException(
+            500,
+            "AI response was cut off before it finished (ran out of output length) — this is "
+            "usually transient, especially on later revision rounds with long prior findings. Try again.",
+        )
+
+    return result
 
 
 async def _analyze(content: list) -> dict:
