@@ -162,7 +162,7 @@ function CheckPreviewGroup({ group }) {
 const DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
 const ACCEPT = `image/jpeg,image/png,image/webp,image/gif,application/pdf,.pdf,${DOCX_MIME},.docx`
 
-function ImageLightbox({ src, name, onClose }) {
+function ImageLightbox({ src, name, type, onClose }) {
   useEffect(() => {
     const handler = (e) => e.key === 'Escape' && onClose()
     window.addEventListener('keydown', handler)
@@ -174,7 +174,7 @@ function ImageLightbox({ src, name, onClose }) {
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 backdrop-blur-sm p-4"
       onClick={(e) => e.target === e.currentTarget && onClose()}
     >
-      <div className="relative max-w-6xl w-full max-h-[90vh] flex flex-col">
+      <div className="relative max-w-6xl w-full h-full max-h-[90vh] flex flex-col">
         <div className="flex items-center justify-between mb-3">
           <span className="text-slate-300 text-sm truncate">{name}</span>
           <button
@@ -186,11 +186,19 @@ function ImageLightbox({ src, name, onClose }) {
             </svg>
           </button>
         </div>
-        <img
-          src={src}
-          alt="Artwork"
-          className="w-full h-full object-contain rounded-xl max-h-[82vh]"
-        />
+        {type === 'pdf' ? (
+          <iframe
+            src={src}
+            title={name}
+            className="w-full h-full rounded-xl bg-white max-h-[82vh]"
+          />
+        ) : (
+          <img
+            src={src}
+            alt="Artwork"
+            className="w-full h-full object-contain rounded-xl max-h-[82vh]"
+          />
+        )}
       </div>
     </div>
   )
@@ -198,27 +206,50 @@ function ImageLightbox({ src, name, onClose }) {
 
 function FilePreview({ file, preview, onExpand }) {
   if (!file) return null
-  if (file.type === 'application/pdf' || file.type === DOCX_MIME) {
-    const isDocx = file.type === DOCX_MIME
+  if (file.type === 'application/pdf') {
+    return (
+      <div className="card overflow-hidden">
+        <div
+          className="relative group cursor-zoom-in flex items-center gap-3 px-4 py-3"
+          onClick={() => preview && onExpand?.(preview, file.name, 'pdf')}
+        >
+          <div className="w-9 h-9 rounded-lg bg-red-500/10 flex items-center justify-center flex-shrink-0">
+            <svg className="w-5 h-5 text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
+            </svg>
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="text-slate-200 text-sm font-medium truncate">{file.name}</p>
+            <p className="text-slate-500 text-xs">PDF document · {(file.size / 1024).toFixed(0)} KB</p>
+          </div>
+          <div className="opacity-0 group-hover:opacity-100 transition-opacity text-indigo-400 text-xs font-medium flex-shrink-0 flex items-center gap-1">
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607zM10.5 7.5v6m3-3h-6" />
+            </svg>
+            View
+          </div>
+        </div>
+      </div>
+    )
+  }
+  if (file.type === DOCX_MIME) {
     return (
       <div className="card flex items-center gap-3 px-4 py-3">
-        <div className={`w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 ${isDocx ? 'bg-blue-500/10' : 'bg-red-500/10'}`}>
-          <svg className={`w-5 h-5 ${isDocx ? 'text-blue-400' : 'text-red-400'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+        <div className="w-9 h-9 rounded-lg bg-blue-500/10 flex items-center justify-center flex-shrink-0">
+          <svg className="w-5 h-5 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
           </svg>
         </div>
         <div className="min-w-0">
           <p className="text-slate-200 text-sm font-medium truncate">{file.name}</p>
-          <p className="text-slate-500 text-xs">
-            {isDocx ? 'Word document — embedded image will be extracted' : 'PDF document'} · {(file.size / 1024).toFixed(0)} KB
-          </p>
+          <p className="text-slate-500 text-xs">Word document — embedded image will be extracted · {(file.size / 1024).toFixed(0)} KB</p>
         </div>
       </div>
     )
   }
   return (
     <div className="card overflow-hidden">
-      <div className="relative group cursor-zoom-in" onClick={() => onExpand?.(preview, file.name)}>
+      <div className="relative group cursor-zoom-in" onClick={() => onExpand?.(preview, file.name, 'image')}>
         <img src={preview} alt="Artwork" className="w-full object-contain max-h-44 bg-slate-900" />
         <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors flex items-center justify-center">
           <div className="opacity-0 group-hover:opacity-100 transition-opacity bg-slate-900/80 rounded-full p-2">
@@ -519,6 +550,8 @@ export default function Proofing() {
       const reader = new FileReader()
       reader.onload = e => setPreview(e.target.result)
       reader.readAsDataURL(f)
+    } else if (f.type === 'application/pdf') {
+      setPreview(URL.createObjectURL(f))
     } else {
       setPreview(null)
     }
@@ -726,7 +759,7 @@ export default function Proofing() {
   return (
     <div className="max-w-4xl mx-auto space-y-6 px-4 sm:px-0">
       {lightbox && (
-        <ImageLightbox src={lightbox.src} name={lightbox.name} onClose={() => setLightbox(null)} />
+        <ImageLightbox src={lightbox.src} name={lightbox.name} type={lightbox.type} onClose={() => setLightbox(null)} />
       )}
       {/* Header */}
       <div>
@@ -869,7 +902,7 @@ export default function Proofing() {
                     file={frontFile} preview={frontPreview}
                     onFile={handleFrontFile}
                     onRemove={() => { setFrontFile(null); setFrontPreview(null) }}
-                    onExpand={(src, name) => setLightbox({ src, name })}
+                    onExpand={(src, name, type) => setLightbox({ src, name, type })}
                   />
                   <div className="border-t border-slate-800/60" />
                   <PanelUploadZone
@@ -878,7 +911,7 @@ export default function Proofing() {
                     file={backFile} preview={backPreview}
                     onFile={handleBackFile}
                     onRemove={() => { setBackFile(null); setBackPreview(null) }}
-                    onExpand={(src, name) => setLightbox({ src, name })}
+                    onExpand={(src, name, type) => setLightbox({ src, name, type })}
                   />
                 </>
               ) : (
@@ -889,7 +922,7 @@ export default function Proofing() {
                   file={combinedFile} preview={combinedPreview}
                   onFile={handleCombinedFile}
                   onRemove={() => { setCombinedFile(null); setCombinedPreview(null) }}
-                  onExpand={(src, name) => setLightbox({ src, name })}
+                  onExpand={(src, name, type) => setLightbox({ src, name, type })}
                 />
               )
             ) : (
@@ -1062,7 +1095,7 @@ export default function Proofing() {
                     file={approvedCombinedFile} preview={approvedCombinedPreview}
                     onFile={handleApprovedCombinedFile}
                     onRemove={() => { setApprovedCombinedFile(null); setApprovedCombinedPreview(null); setVerifyResult(null) }}
-                    onExpand={(src, name) => setLightbox({ src, name })}
+                    onExpand={(src, name, type) => setLightbox({ src, name, type })}
                   />
                 ) : (
                   <>
@@ -1072,7 +1105,7 @@ export default function Proofing() {
                       file={approvedFrontFile} preview={approvedFrontPreview}
                       onFile={handleApprovedFrontFile}
                       onRemove={() => { setApprovedFrontFile(null); setApprovedFrontPreview(null); setVerifyResult(null) }}
-                      onExpand={(src, name) => setLightbox({ src, name })}
+                      onExpand={(src, name, type) => setLightbox({ src, name, type })}
                     />
                     <PanelUploadZone
                       label="Approved Proof — Back Panel"
@@ -1080,7 +1113,7 @@ export default function Proofing() {
                       file={approvedBackFile} preview={approvedBackPreview}
                       onFile={handleApprovedBackFile}
                       onRemove={() => { setApprovedBackFile(null); setApprovedBackPreview(null); setVerifyResult(null) }}
-                      onExpand={(src, name) => setLightbox({ src, name })}
+                      onExpand={(src, name, type) => setLightbox({ src, name, type })}
                     />
                   </>
                 )}
@@ -1096,7 +1129,7 @@ export default function Proofing() {
                     file={finalCombinedFile} preview={finalCombinedPreview}
                     onFile={handleFinalCombinedFile}
                     onRemove={() => { setFinalCombinedFile(null); setFinalCombinedPreview(null); setVerifyResult(null) }}
-                    onExpand={(src, name) => setLightbox({ src, name })}
+                    onExpand={(src, name, type) => setLightbox({ src, name, type })}
                   />
                 ) : (
                   <>
@@ -1106,7 +1139,7 @@ export default function Proofing() {
                       file={finalFrontFile} preview={finalFrontPreview}
                       onFile={handleFinalFrontFile}
                       onRemove={() => { setFinalFrontFile(null); setFinalFrontPreview(null); setVerifyResult(null) }}
-                      onExpand={(src, name) => setLightbox({ src, name })}
+                      onExpand={(src, name, type) => setLightbox({ src, name, type })}
                     />
                     <PanelUploadZone
                       label="Final Proof — Back Panel"
@@ -1114,7 +1147,7 @@ export default function Proofing() {
                       file={finalBackFile} preview={finalBackPreview}
                       onFile={handleFinalBackFile}
                       onRemove={() => { setFinalBackFile(null); setFinalBackPreview(null); setVerifyResult(null) }}
-                      onExpand={(src, name) => setLightbox({ src, name })}
+                      onExpand={(src, name, type) => setLightbox({ src, name, type })}
                     />
                   </>
                 )}
