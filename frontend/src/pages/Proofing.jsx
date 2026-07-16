@@ -557,7 +557,23 @@ export default function Proofing() {
     }
   }
 
-  const makeThumbnail = (dataUrl) => new Promise(resolve => {
+  const makeThumbnail = (dataUrl, mimeType) => new Promise(resolve => {
+    // PDFs/Word docs aren't valid <img> sources — draw a labeled placeholder instead
+    // of silently failing (this previously resolved to null for every non-image upload).
+    if (mimeType === 'application/pdf' || mimeType === DOCX_MIME) {
+      const canvas = document.createElement('canvas')
+      canvas.width = 200; canvas.height = 120
+      const ctx = canvas.getContext('2d')
+      ctx.fillStyle = '#0f172a'
+      ctx.fillRect(0, 0, canvas.width, canvas.height)
+      ctx.fillStyle = mimeType === DOCX_MIME ? '#60a5fa' : '#f87171'
+      ctx.font = 'bold 28px sans-serif'
+      ctx.textAlign = 'center'
+      ctx.textBaseline = 'middle'
+      ctx.fillText(mimeType === DOCX_MIME ? 'DOC' : 'PDF', canvas.width / 2, canvas.height / 2)
+      resolve(canvas.toDataURL('image/jpeg', 0.8))
+      return
+    }
     if (!dataUrl) return resolve(null)
     const img = new Image()
     img.onload = () => {
@@ -575,7 +591,8 @@ export default function Proofing() {
   const persistJob = async (data, round) => {
     try {
       const preview = combinedPreview || frontPreview || backPreview || null
-      const thumbnail = await makeThumbnail(preview)
+      const mimeType = combinedFile?.type || frontFile?.type || backFile?.type || null
+      const thumbnail = await makeThumbnail(preview, mimeType)
       const fileName = combinedFile?.name || frontFile?.name || backFile?.name || null
       if (jobId) {
         await api.proofJobs.update(jobId, {
