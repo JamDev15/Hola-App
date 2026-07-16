@@ -2,8 +2,19 @@ const BASE = '/api'
 // File uploads bypass Vercel's 4.5 MB proxy limit by going directly to the backend
 const DIRECT_BASE = 'https://hola-app-k5ov.onrender.com/api'
 
+// fetch() rejects with a generic "Failed to fetch" whenever the browser drops the connection
+// mid-request (tab backgrounded, computer slept, wifi dropped) — replace that with something
+// the user can actually act on, especially important for long-running artwork analysis calls.
+async function _fetch(url, options) {
+  try {
+    return await fetch(url, options)
+  } catch {
+    throw new Error('Connection interrupted before a response came back — this can happen if your browser tab lost focus or the computer went idle during a long upload. Please try again.')
+  }
+}
+
 async function req(url, options = {}) {
-  const res = await fetch(BASE + url, {
+  const res = await _fetch(BASE + url, {
     headers: { 'Content-Type': 'application/json' },
     ...options,
   })
@@ -46,7 +57,7 @@ export const api = {
     if (combinedFile) form.append('combined_file', combinedFile)
     if (frontFile) form.append('front_file', frontFile)
     if (backFile) form.append('back_file', backFile)
-    const res = await fetch(`${DIRECT_BASE}/proof`, { method: 'POST', body: form })
+    const res = await _fetch(`${DIRECT_BASE}/proof`, { method: 'POST', body: form })
     const text = await res.text()
     let data
     try { data = JSON.parse(text) } catch { throw new Error(text || 'Proof request failed') }
@@ -60,7 +71,7 @@ export const api = {
     if (combinedFile) form.append('combined_file', combinedFile)
     if (frontFile)    form.append('front_file', frontFile)
     if (backFile)     form.append('back_file', backFile)
-    const res = await fetch(`${DIRECT_BASE}/proof/revise`, { method: 'POST', body: form })
+    const res = await _fetch(`${DIRECT_BASE}/proof/revise`, { method: 'POST', body: form })
     const text = await res.text()
     let data
     try { data = JSON.parse(text) } catch { throw new Error(text || 'Revision failed') }
@@ -87,7 +98,7 @@ export const api = {
     if (finalCombinedFile)    form.append('final_combined_file', finalCombinedFile)
     if (finalFrontFile)       form.append('final_front_file', finalFrontFile)
     if (finalBackFile)        form.append('final_back_file', finalBackFile)
-    const res = await fetch(`${DIRECT_BASE}/proof/verify`, { method: 'POST', body: form })
+    const res = await _fetch(`${DIRECT_BASE}/proof/verify`, { method: 'POST', body: form })
     const text = await res.text()
     let data
     try { data = JSON.parse(text) } catch { throw new Error(text || 'Verification failed') }
