@@ -20,7 +20,7 @@ const L  = 15   // left margin
 const R  = 195  // right margin x
 const CW = R - L
 
-export function generateCompliancePDF(result, { frontName, backName } = {}) {
+export function generateCompliancePDF(result, { frontName, backName, ownerName, clientName, round } = {}) {
   const doc = new jsPDF({ unit: 'mm', format: 'a4' })
   let y = 0
   let pageNum = 1
@@ -55,6 +55,9 @@ export function generateCompliancePDF(result, { frontName, backName } = {}) {
     year: 'numeric', month: 'long', day: 'numeric',
   })
   doc.text(dateStr, R, 22, { align: 'right' })
+  if (round) {
+    doc.text(`Revision Round ${round} of 3`, R, 27, { align: 'right' })
+  }
 
   y = 38
 
@@ -67,10 +70,26 @@ export function generateCompliancePDF(result, { frontName, backName } = {}) {
   doc.setLineWidth(0.4)
   doc.roundedRect(L, y, CW, 26, 2, 2, 'S')
 
+  // Status icon drawn as vectors, not a Unicode glyph — the base PDF fonts (helvetica) don't
+  // reliably support ✓/✗ and were rendering as garbled/wrong characters.
+  const iconCx = L + 8
+  const iconCy = y + 6.5
+  doc.setFillColor(pass ? 16 : 239, pass ? 185 : 68, pass ? 129 : 68)
+  doc.circle(iconCx, iconCy, 3.2, 'F')
+  doc.setDrawColor(255, 255, 255)
+  doc.setLineWidth(0.6)
+  if (pass) {
+    doc.line(iconCx - 1.6, iconCy,       iconCx - 0.4, iconCy + 1.3)
+    doc.line(iconCx - 0.4, iconCy + 1.3, iconCx + 1.8, iconCy - 1.4)
+  } else {
+    doc.line(iconCx - 1.4, iconCy - 1.4, iconCx + 1.4, iconCy + 1.4)
+    doc.line(iconCx - 1.4, iconCy + 1.4, iconCx + 1.4, iconCy - 1.4)
+  }
+
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(12)
   doc.setTextColor(pass ? 6 : 153, pass ? 95 : 27, pass ? 70 : 27)
-  doc.text(pass ? '✓  ARTWORK APPROVED' : '✗  REVISIONS REQUIRED', L + 5, y + 9)
+  doc.text(pass ? 'ARTWORK APPROVED' : 'REVISIONS REQUIRED', L + 13, y + 9)
 
   const passCount = result.checks?.filter(c => c.status === 'pass').length    || 0
   const failCount = result.checks?.filter(c => c.status === 'fail').length    || 0
@@ -91,14 +110,27 @@ export function generateCompliancePDF(result, { frontName, backName } = {}) {
 
   y += 32
 
-  // ── Files analysed ────────────────────────────────────────────────────────
-  if (frontName || backName) {
+  // ── Job details: owner, client, files analysed ──────────────────────────────
+  const hasJobDetails = ownerName || clientName || frontName || backName
+  if (hasJobDetails) {
+    const detailLines = []
+    if (ownerName || clientName) {
+      const parts = []
+      if (ownerName)  parts.push(`Prepared by: ${ownerName}`)
+      if (clientName) parts.push(`Client: ${clientName}`)
+      detailLines.push(parts.join('   ·   '))
+    }
+    if (frontName) detailLines.push(`Front: ${frontName}`)
+    if (backName)  detailLines.push(`Back: ${backName}`)
+
     doc.setFont('helvetica', 'normal')
     doc.setFontSize(7.5)
     doc.setTextColor(100, 116, 139)
-    if (frontName) doc.text(`Front: ${frontName}`, L, y)
-    if (backName)  doc.text(`Back: ${backName}`,   frontName ? L + 90 : L, y)
-    y += 7
+    for (const line of detailLines) {
+      doc.text(line, L, y)
+      y += 5
+    }
+    y += 2
   }
 
   // ── Checks grouped ────────────────────────────────────────────────────────
@@ -122,20 +154,32 @@ export function generateCompliancePDF(result, { frontName, backName } = {}) {
       gc.fail    && `${gc.fail} failed`,
       gc.warning && `${gc.warning} warnings`,
     ].filter(Boolean).join('  ·  ')
+    doc.setFontSize(8)
     doc.text(cStr, R - 2, y + 5.5, { align: 'right' })
 
     y += 8
 
     for (const check of checks) {
-      const findingLines = doc.splitTextToSize(check.finding || '', CW - 18)
-      const recLines     = check.recommendation
-        ? doc.splitTextToSize(`${check.recommendation}`, CW - 24)
-        : []
-      const rowH = 8 + findingLines.length * 4 + (recLines.length ? recLines.length * 4 + 5 : 0) + 3
+      // Measure wrapped line counts using the EXACT font/size each block renders with —
+      // splitTextToSize wraps against whatever font is currently active on the doc, so this
+      // must match the font set immediately before the matching doc.text() call below, or the
+      // row height (and the background/recommendation boxes) won't match the actual text.
+      doc.setFont('helvetica', 'normal')
+      doc.setFontSize(7.5)
+      const findingLines = check.finding ? doc.splitTextToSize(check.finding, CW - 20) : []
+
+      doc.setFont('helvetica', 'normal')
+      doc.setFontSize(7)
+      const recLines = check.recommendation ? doc.splitTextToSize(check.recommendation, CW - 30) : []
+
+      const showRec = recLines.length && (check.status === 'fail' || check.status === 'warning')
+      const findingH = findingLines.length ? findingLines.length * 3.8 + 2 : 0
+      const recH     = showRec ? recLines.length * 3.8 + 5 : 0
+      const rowH = 9 + findingH + (showRec ? recH + 2 : 0) + 3
 
       guard(rowH)
 
-      // Alternating row bg
+      // Row background
       doc.setFillColor(248, 250, 252)
       doc.rect(L, y, CW, rowH, 'F')
 
@@ -154,29 +198,31 @@ export function generateCompliancePDF(result, { frontName, backName } = {}) {
       doc.setFontSize(8.5)
       doc.text(check.label, L + 17, y + 5.5)
 
-      y += 8
+      y += 9
 
       // Finding text
-      if (check.finding) {
+      if (findingLines.length) {
         doc.setFont('helvetica', 'normal')
         doc.setFontSize(7.5)
         doc.setTextColor(71, 85, 105)
         doc.text(findingLines, L + 17, y + 1)
-        y += findingLines.length * 4
+        y += findingH
       }
 
-      // Recommendation box (fail / warning only)
-      if (recLines.length && (check.status === 'fail' || check.status === 'warning')) {
-        const recH = recLines.length * 4 + 4
+      // Recommendation box (fail / warning only) — rounded, with real padding so
+      // text never touches or exceeds the box edges regardless of wrap length.
+      if (showRec) {
         doc.setFillColor(255, 251, 235)
-        doc.rect(L + 17, y, CW - 17, recH, 'F')
+        doc.setDrawColor(253, 230, 138)
+        doc.setLineWidth(0.25)
+        doc.roundedRect(L + 17, y, CW - 19, recH, 1, 1, 'FD')
         doc.setTextColor(146, 64, 14)
         doc.setFont('helvetica', 'bold')
         doc.setFontSize(7)
-        doc.text('Fix:', L + 19, y + 4)
+        doc.text('Fix:', L + 20, y + 4)
         doc.setFont('helvetica', 'normal')
-        doc.text(recLines, L + 29, y + 4)
-        y += recH + 1
+        doc.text(recLines, L + 30, y + 4)
+        y += recH + 2
       }
 
       // Row divider
@@ -198,7 +244,7 @@ export function generateCompliancePDF(result, { frontName, backName } = {}) {
     doc.setFont('helvetica', 'normal')
     doc.setFontSize(7)
     doc.setTextColor(148, 163, 184)
-    doc.text('Halo Private Label — Artwork Compliance Report', L, H - 5)
+    doc.text('halo Private Label — Artwork Compliance Report', L, H - 5)
     doc.text(`Page ${i} of ${totalPages}`, R, H - 5, { align: 'right' })
   }
 

@@ -753,8 +753,10 @@ export default function Proofing() {
     } else {
       frontName = frontFile?.name; backName = backFile?.name
     }
-    generateCompliancePDF(result, { frontName, backName })
+    generateCompliancePDF(result, { frontName, backName, ownerName, clientName, round: analysisRound })
   }
+
+  const isFinalized = jobStatus === 'done' || analysisRound === 3
 
   const grouped = result?.checks
     ? ['front', 'back', 'claims', 'quality'].reduce((acc, g) => {
@@ -1068,8 +1070,13 @@ export default function Proofing() {
             </div>
           )}
 
-          {/* ── Final Proof Verification ── */}
-          {result && !loading && (
+          {/* ── Final Proof Verification (only once the artwork is actually finalized) ── */}
+          {result && !loading && !isFinalized && (
+            <div className="card p-3 border border-slate-700/60 text-xs text-slate-500">
+              Final Proof Verification will be available once this artwork completes all 3 rounds or is marked Done.
+            </div>
+          )}
+          {result && !loading && isFinalized && (
             <div className="card p-4 sm:p-5 space-y-4 border border-amber-500/20 bg-amber-500/5">
               <div>
                 <div className="flex items-center gap-2">
